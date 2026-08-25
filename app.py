@@ -5,13 +5,12 @@ from flask import Flask, render_template_string, request, session, redirect, url
 app = Flask(__name__)
 app.secret_key = 'admin_super_secret_key'
 
-SECURITY_PIN = "137955"  # আপনার নির্ধারিত সিকিউরিটি পিন
+SECURITY_PIN = "137955"
 
 def init_db():
     conn = sqlite3.connect('attendance.db')
     c = conn.cursor()
     
-    # ইউজার টেবিল
     c.execute('''CREATE TABLE IF NOT EXISTS users 
                  (id INTEGER PRIMARY KEY AUTOINCREMENT, 
                   username TEXT UNIQUE, 
@@ -23,28 +22,22 @@ def init_db():
                   payment_method TEXT,
                   payment_number TEXT)''')
     
-    # হাজিরা টেবিল
     c.execute('''CREATE TABLE IF NOT EXISTS attendance 
                  (id INTEGER PRIMARY KEY AUTOINCREMENT, username TEXT, check_in TEXT, check_out TEXT, date TEXT)''')
     
-    # জিমেইল কাজের হিসাব টেবিল
     c.execute('''CREATE TABLE IF NOT EXISTS gmail_work 
                  (id INTEGER PRIMARY KEY AUTOINCREMENT, username TEXT, gmail_used TEXT, work_count INTEGER, comment_used TEXT, date TEXT)''')
 
-    # পেমেন্ট হিস্ট্রি টেবিল
     c.execute('''CREATE TABLE IF NOT EXISTS payments 
                  (id INTEGER PRIMARY KEY AUTOINCREMENT, username TEXT, month_year TEXT, amount REAL, payment_date TEXT)''')
 
-    # এডমিন প্রিসেট কমেন্ট ও কনফিগারেশন টেবিল
     c.execute('''CREATE TABLE IF NOT EXISTS system_config 
                  (id INTEGER PRIMARY KEY AUTOINCREMENT, preset_comment TEXT)''')
     
-    # ডিফল্ট এডমিন তৈরি (Khushbu23 / 01751947523)
     c.execute("SELECT * FROM users WHERE username='Khushbu23'")
     if not c.fetchone():
         c.execute("INSERT INTO users (username, password, role) VALUES ('Khushbu23', '01751947523', 'admin')")
     
-    # ডিফল্ট কমেন্ট সেট
     c.execute("SELECT * FROM system_config")
     if not c.fetchone():
         c.execute("INSERT INTO system_config (preset_comment) VALUES ('Great service! Highly recommended.')")
@@ -365,7 +358,7 @@ def login():
 
 @app.route('/update-preset-comment', methods=['POST'])
 def update_preset_comment():
-    if session.get('role'] == 'admin':
+    if session.get('role') == 'admin':
         comment = request.form.get('preset_comment')
         conn = sqlite3.connect('attendance.db')
         c = conn.cursor()
@@ -377,7 +370,7 @@ def update_preset_comment():
 
 @app.route('/create-staff', methods=['POST'])
 def create_staff():
-    if session.get('role'] == 'admin':
+    if session.get('role') == 'admin':
         staff_user = request.form.get('staff_user')
         staff_pass = request.form.get('staff_pass')
         gmail = request.form.get('gmail')
@@ -402,7 +395,7 @@ def create_staff():
 
 @app.route('/delete-staff', methods=['POST'])
 def delete_staff():
-    if session.get('role'] == 'admin':
+    if session.get('role') == 'admin':
         staff_id = request.form.get('staff_id')
         entered_pin = request.form.get('security_pin')
         
@@ -419,7 +412,7 @@ def delete_staff():
 
 @app.route('/add-payment', methods=['POST'])
 def add_payment():
-    if session.get('role'] == 'admin':
+    if session.get('role') == 'admin':
         staff_name = request.form.get('staff_name')
         month_year = request.form.get('month_year')
         amount = request.form.get('amount')
