@@ -81,6 +81,7 @@ HTML_LAYOUT = """
         .msg-staff { background: #d1ecf1; text-align: right; }
         details { background: #f8f9fa; padding: 10px; border: 1px solid #ddd; border-radius: 5px; margin-top: 15px; }
         summary { font-weight: bold; cursor: pointer; color: #333; }
+        .search-box { background: #e9ecef; padding: 10px; border-radius: 5px; margin-bottom: 15px; }
     </style>
 </head>
 <body>
@@ -170,6 +171,15 @@ HTML_LAYOUT = """
                 </details>
 
                 <hr>
+                <!-- সার্চ সিস্টেম -->
+                <div class="search-box">
+                    <h4>🔍 স্টাফ খুঁজুন (Search System)</h4>
+                    <form method="GET" action="/">
+                        <input type="text" name="search" value="{{ search_query }}" placeholder="স্টাফের নাম, আইডি, জিমেইল বা মোবাইল নম্বর দিয়ে সার্চ করুন..." style="width: 80%;">
+                        <button type="submit" style="width: 15%; display: inline-block; background: #17a2b8;">Search</button>
+                    </form>
+                </div>
+
                 <h4>স্টাফ প্রোফাইল ও পাসওয়ার্ড তালিকা</h4>
                 <table>
                     <tr>
@@ -297,7 +307,13 @@ def home():
         admin_contact = config[1] if config else ""
         
         if session['role'] == 'admin':
-            c.execute("SELECT * FROM users WHERE role='staff'")
+            search_query = request.args.get('search', '').strip()
+            if search_query:
+                q = f"%{search_query}%"
+                c.execute("SELECT * FROM users WHERE role='staff' AND (username LIKE ? OR staff_name LIKE ? OR gmail LIKE ? OR mobile LIKE ?)", (q, q, q, q))
+            else:
+                c.execute("SELECT * FROM users WHERE role='staff'")
+            
             staff_list = c.fetchall()
             
             selected_chat_user = request.args.get('chat_with')
@@ -307,12 +323,14 @@ def home():
                           ('Khushbu23', selected_chat_user, selected_chat_user, 'Khushbu23'))
                 chat_messages = c.fetchall()
                 
-            total_staff = len(staff_list)
+            c.execute("SELECT COUNT(*) FROM users WHERE role='staff'")
+            total_staff = c.fetchone()[0]
+            
             conn.close()
             return render_template_string(HTML_LAYOUT, staff_list=staff_list, 
                                          total_staff=total_staff, preset_comment=preset_comment, 
                                          admin_contact=admin_contact, selected_chat_user=selected_chat_user, 
-                                         chat_messages=chat_messages)
+                                         chat_messages=chat_messages, search_query=search_query)
         else:
             c.execute("SELECT * FROM attendance WHERE username=? AND date=?", (session['user'], today))
             today_log = c.fetchone()
@@ -380,7 +398,7 @@ def create_staff():
                           (staff_user, staff_name, staff_pass, gmail, gmail_pass, mobile, payment_method, payment_number))
                 conn.commit()
                 conn.close()
-                flash('স্টাফ অ্যাকাউন্ট সফলভাবে তৈরি করা হয়েছে!')
+                flash('স্টাফ অ্যাকাউন্ট সফলভাবে তৈরি ও সার্ভারে সেভ করা হয়েছে!')
             except:
                 flash('এই ইউজার আইডিটি আগে থেকেই রয়েছে!')
         else:
