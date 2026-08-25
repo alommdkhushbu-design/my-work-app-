@@ -23,6 +23,7 @@ def init_db():
                   staff_name TEXT,
                   password TEXT, 
                   role TEXT,
+                  account_type TEXT,
                   gmail TEXT,
                   gmail_pass TEXT,
                   mobile TEXT,
@@ -36,7 +37,7 @@ def init_db():
                  (id INTEGER PRIMARY KEY AUTOINCREMENT, username TEXT, gmail_used TEXT, work_count INTEGER, comment_used TEXT, date TEXT)''')
 
     c.execute('''CREATE TABLE IF NOT EXISTS payments 
-                 (id INTEGER PRIMARY KEY AUTOINCREMENT, username TEXT, month_year TEXT, amount REAL, payment_date TEXT)''')
+                 (id INTEGER PRIMARY KEY AUTOINCREMENT, username TEXT, month_year TEXT, amount REAL, payment_method TEXT, payment_number TEXT, payment_date TEXT)''')
 
     c.execute('''CREATE TABLE IF NOT EXISTS system_config 
                  (id INTEGER PRIMARY KEY AUTOINCREMENT, preset_comment TEXT, admin_contact TEXT)''')
@@ -45,11 +46,11 @@ def init_db():
                  (id INTEGER PRIMARY KEY AUTOINCREMENT, sender TEXT, receiver TEXT, message TEXT, image_url TEXT, timestamp TEXT)''')
 
     c.execute('''CREATE TABLE IF NOT EXISTS assigned_tasks 
-                 (id INTEGER PRIMARY KEY AUTOINCREMENT, username TEXT, task_details TEXT, assigned_date TEXT, status TEXT)''')
+                 (id INTEGER PRIMARY KEY AUTOINCREMENT, username TEXT, task_details TEXT, assigned_date TEXT, status TEXT, start_time TEXT, end_time TEXT)''')
     
     c.execute("SELECT * FROM users WHERE username='Khushbu23'")
     if not c.fetchone():
-        c.execute("INSERT INTO users (username, staff_name, password, role) VALUES ('Khushbu23', 'Admin', '01751947523', 'admin')")
+        c.execute("INSERT INTO users (username, staff_name, password, role, account_type) VALUES ('Khushbu23', 'Admin', '01751947523', 'admin', 'Admin')")
     
     c.execute("SELECT * FROM system_config")
     if not c.fetchone():
@@ -102,11 +103,19 @@ HTML_LAYOUT = """
 
         {% if not session.get('user') %}
             {% if request.path == '/register' %}
-                <h2 style="text-align: center;">নতুন স্টাফ একাউন্ট রেজিস্টার করুন</h2>
+                <h2 style="text-align: center;">নতুন স্টাফ অ্যাকাউন্ট রেজিস্টার করুন</h2>
                 <form method="POST" action="/register-action">
                     <input type="text" name="staff_name" placeholder="আপনার নাম (Staff Name)" required><br>
                     <input type="email" name="gmail" placeholder="জিমেইল এড্রেস (Gmail)" required><br>
                     <input type="text" name="mobile" placeholder="মোবাইল নম্বর" required><br>
+                    <select name="payment_method" required>
+                        <option value="bKash">বিকাশ (bKash)</option>
+                        <option value="Nagad">নগদ (Nagad)</option>
+                        <option value="Rocket">রকেট (Rocket)</option>
+                        <option value="Upay">উপায় (Upay)</option>
+                        <option value="Bank">ব্যাংক (Bank)</option>
+                    </select><br>
+                    <input type="text" name="payment_number" placeholder="পেমেন্ট নম্বর (যে নাম্বারে টাকা তুলবেন)" required><br>
                     <input type="password" name="password" placeholder="পাসওয়ার্ড তৈরি করুন" required><br>
                     <button type="submit" class="btn-success">Register Account</button>
                 </form>
@@ -142,18 +151,29 @@ HTML_LAYOUT = """
                 <form method="POST" action="/assign-task">
                     <select name="staff_username" required>
                         <option value="">কাজ দেওয়ার জন্য স্টাফ সিলেক্ট করুন</option>
-                        {% for s in staff_list %}
-                        <option value="{{ s[1] }}">{{ s[2] }} (ID: {{ s[1] }})</option>
-                        {% endfor %}
+                        <optgroup label="🟢 রেজিস্টার্ড অ্যাকাউন্টসমূহ">
+                            {% for s in staff_list %}
+                                {% if s[5] == 'Registered' %}
+                                <option value="{{ s[1] }}">{{ s[2] }} (ID: {{ s[1] }})</option>
+                                {% endif %}
+                            {% endfor %}
+                        </optgroup>
+                        <optgroup label="🔵 এক্সট্রা অ্যাকাউন্টসমূহ">
+                            {% for s in staff_list %}
+                                {% if s[5] == 'Extra' %}
+                                <option value="{{ s[1] }}">{{ s[2] }} (ID: {{ s[1] }})</option>
+                                {% endif %}
+                            {% endfor %}
+                        </optgroup>
                     </select><br>
                     <textarea name="task_details" rows="3" placeholder="কাজের বিবরণ ও নির্দেশনা লিখুন..." required></textarea><br>
                     <button type="submit" class="btn-success">Send Task to Staff</button>
                 </form>
 
                 <details>
-                    <summary>⚙️ নতুন স্টাফ একাউন্ট তৈরি ও অন্যান্য টুলস</summary>
+                    <summary>⚙️ এক্সট্রা অ্যাকাউন্ট তৈরি ও পেমেন্ট টুলস</summary>
                     <div style="margin-top: 10px;">
-                        <h4>নতুন স্টাফ একাউন্ট তৈরি করুন</h4>
+                        <h4>নতুন এক্সট্রা অ্যাকাউন্ট তৈরি করুন</h4>
                         <form method="POST" action="/create-staff">
                             <input type="text" name="staff_user" placeholder="স্টাফ ইউজার আইডি (Login ID)" required><br>
                             <input type="text" name="staff_name" placeholder="স্টাফ নাম (Staff Name)" required><br>
@@ -170,7 +190,7 @@ HTML_LAYOUT = """
                             </select><br>
                             <input type="text" name="payment_number" placeholder="পেমেন্ট নম্বর" required><br>
                             <input type="password" name="security_pin" placeholder="সিকিউরিটি কোড (137955)" required><br>
-                            <button type="submit" class="btn-success">Create Profile</button>
+                            <button type="submit" class="btn-success">Create Extra Profile</button>
                         </form>
                         <hr>
                         <h4>মাসিক পেমেন্ট রেকর্ড যুক্ত করুন</h4>
@@ -178,12 +198,20 @@ HTML_LAYOUT = """
                             <select name="staff_name" required>
                                 <option value="">স্টাফ নির্বাচন করুন</option>
                                 {% for s in staff_list %}
-                                <option value="{{ s[2] }}">{{ s[2] }} (ID: {{ s[1] }})</option>
+                                <option value="{{ s[1] }}">{{ s[2] }} (ID: {{ s[1] }})</option>
                                 {% endfor %}
                             </select><br>
                             <input type="text" name="month_year" placeholder="মাস ও বছর (যেমন: August 2026)" required><br>
                             <input type="number" step="0.01" name="amount" placeholder="টাকার পরিমাণ" required><br>
-                            <button type="submit">Save Payment</button>
+                            <select name="payment_method" required>
+                                <option value="bKash">বিকাশ (bKash)</option>
+                                <option value="Nagad">নগদ (Nagad)</option>
+                                <option value="Rocket">রকেট (Rocket)</option>
+                                <option value="Upay">উপায় (Upay)</option>
+                                <option value="Bank">ব্যাংক (Bank)</option>
+                            </select><br>
+                            <input type="text" name="payment_number" placeholder="যে নাম্বারে পেমেন্ট দেওয়া হয়েছে" required><br>
+                            <button type="submit">Save Payment History</button>
                         </form>
                     </div>
                 </details>
@@ -197,45 +225,68 @@ HTML_LAYOUT = """
                     </form>
                 </div>
 
-                <h4>স্টাফ প্রোফাইল ও পাসওয়ার্ড তালিকা</h4>
+                <h4>স্টাফ প্রোফাইল ও পেমেন্ট তথ্য</h4>
                 <table>
                     <tr>
-                        <th>Serial</th>
                         <th>ID</th>
                         <th>Name</th>
-                        <th>Password</th>
+                        <th>Type</th>
                         <th>Gmail</th>
                         <th>Mobile</th>
+                        <th>Payment Info</th>
                     </tr>
                     {% for s in staff_list %}
                     <tr>
-                        <td><b>#{{ s[0] }}</b></td>
                         <td><b>{{ s[1] }}</b></td>
                         <td>{{ s[2] }}</td>
-                        <td>{{ s[3] }}</td>
-                        <td>{{ s[5] }}</td>
-                        <td>{{ s[7] }}</td>
+                        <td><span style="background: {% if s[5] == 'Registered' %}#17a2b8{% else %}#6c757d{% endif %}; color: white; padding: 2px 5px; border-radius: 3px;">{{ s[5] }}</span></td>
+                        <td>{{ s[6] }}</td>
+                        <td>{{ s[8] }}</td>
+                        <td>{{ s[9] }} - {{ s[10] }}</td>
                     </tr>
                     {% endfor %}
                 </table>
 
                 <hr>
-                <h4>📊 স্টাফদের প্রতিদিনের কাজের রিপোর্ট ও জিমেইল হিসাব</h4>
+                <h4>💰 পেমেন্ট হিস্ট্রি রেকর্ড (কত টাকা কে পেল)</h4>
                 <table>
                     <tr>
-                        <th>তারিখ (Date)</th>
                         <th>স্টাফ আইডি</th>
-                        <th>ব্যবহৃত জিমেইল</th>
-                        <th>কাজের সংখ্যা</th>
-                        <th>কমেন্ট</th>
+                        <th>মাস ও বছর</th>
+                        <th>টাকার পরিমাণ</th>
+                        <th>পেমেন্ট মাধ্যম</th>
+                        <th>পেমেন্ট নম্বর</th>
+                        <th>তারিখ</th>
                     </tr>
-                    {% for w in all_work_reports %}
+                    {% for p in payment_history %}
                     <tr>
-                        <td>{{ w[5] }}</td>
-                        <td><b>{{ w[1] }}</b></td>
-                        <td>{{ w[2] }}</td>
-                        <td><span style="background: #28a745; color: white; padding: 2px 6px; border-radius: 4px;">{{ w[3] }} টি</span></td>
-                        <td><small>{{ w[4] }}</small></td>
+                        <td><b>{{ p[1] }}</b></td>
+                        <td>{{ p[2] }}</td>
+                        <td><span style="color: green; font-weight: bold;">৳ {{ p[3] }}</span></td>
+                        <td>{{ p[4] }}</td>
+                        <td>{{ p[5] }}</td>
+                        <td>{{ p[6] }}</td>
+                    </tr>
+                    {% endfor %}
+                </table>
+
+                <hr>
+                <h4>📊 কাজের অগ্রগতি ও স্টার্ট/এন্ড টাইম (প্রমাণ)</h4>
+                <table>
+                    <tr>
+                        <th>ID</th>
+                        <th>Task Details</th>
+                        <th>Status</th>
+                        <th>Start Time</th>
+                        <th>End Time</th>
+                    </tr>
+                    {% for t in all_tasks_report %}
+                    <tr>
+                        <td><b>{{ t[1] }}</b></td>
+                        <td>{{ t[2] }}</td>
+                        <td>{{ t[4] }}</td>
+                        <td>{{ t[5] if t[5] else 'Not Started' }}</td>
+                        <td>{{ t[6] if t[6] else 'Not Finished' }}</td>
                     </tr>
                     {% endfor %}
                 </table>
@@ -277,11 +328,36 @@ HTML_LAYOUT = """
                 {% if assigned_tasks %}
                     <div style="background: #e8f4fd; border: 1px solid #b8daff; padding: 10px; border-radius: 5px; margin-bottom: 15px;">
                         <h4 style="margin-top: 0; color: #004085;">📥 এডমিন কর্তৃক প্রদত্ত কাজসমূহ:</h4>
-                        <ul>
                         {% for task in assigned_tasks %}
-                            <li><b>{{ task[2] }}</b> <small>({{ task[3] }})</small></li>
+                            <div style="background: white; padding: 10px; margin-bottom: 8px; border-radius: 4px; border: 1px solid #b8daff;">
+                                <p><b>কাজের বিবরণ:</b> {{ task[2] }}</p>
+                                <p><b>স্ট্যাটাস:</b> <span style="color: {% if task[4] == 'Pending' %}orange{% elif task[4] == 'Accepted' %}blue{% else %}green{% endif %}; font-weight: bold;">{{ task[4] }}</span></p>
+                                
+                                {% if task[4] == 'Pending' %}
+                                    <form method="POST" action="/accept-task">
+                                        <input type="hidden" name="task_id" value="{{ task[0] }}">
+                                        <button type="submit" class="btn-success">Accept Task (কাজ গ্রহণ করুন)</button>
+                                    </form>
+                                {% elif task[4] == 'Accepted' %}
+                                    <p><b>শুরুর সময়:</b> {{ task[5] if task[5] else 'শুরু হয়নি' }}</p>
+                                    {% if not task[5] %}
+                                        <form method="POST" action="/start-task">
+                                            <input type="hidden" name="task_id" value="{{ task[0] }}">
+                                            <button type="submit" class="btn-warning">Start Work (কাজ শুরু করুন)</button>
+                                        </form>
+                                    {% else %}
+                                        <form method="POST" action="/finish-task">
+                                            <input type="hidden" name="task_id" value="{{ task[0] }}">
+                                            <button type="submit" class="btn-danger">Finish Work (কাজ শেষ করুন)</button>
+                                        </form>
+                                    {% endif %}
+                                {% elif task[4] == 'Completed' %}
+                                    <p><b>শুরুর সময়:</b> {{ task[5] }}</p>
+                                    <p><b>শেষের সময়:</b> {{ task[6] }}</p>
+                                    <p style="color: green; font-weight: bold;">✓ এই কাজটি সম্পন্ন হয়েছে!</p>
+                                {% endif %}
+                            </div>
                         {% endfor %}
-                        </ul>
                     </div>
                 {% endif %}
 
@@ -298,7 +374,7 @@ HTML_LAYOUT = """
                         <button onclick="copyAndOpenGmail()" class="btn-warning" style="margin: 0;">কমেন্ট কপি করুন এবং জিমেইল খুলুন</button>
                     </div>
 
-                    <h4>প্রতিদিনের কাজের হিসাব জমা দিন (Work Submission)</h4>
+                    <h4>প্রতিদিনের কাজের হিসাব জমা দিন</h4>
                     <form method="POST" action="/submit-gmail-work">
                         <input type="email" name="gmail_used" placeholder="কোন জিমেইল থেকে কাজ করেছেন?" required><br>
                         <input type="number" name="work_count" placeholder="এই জিমেইলে কয়টি কাজ সম্পন্ন করেছেন?" required><br>
@@ -374,8 +450,11 @@ def home():
             
             staff_list = c.fetchall()
             
-            c.execute("SELECT * FROM gmail_work ORDER BY id DESC")
-            all_work_reports = c.fetchall()
+            c.execute("SELECT * FROM payments ORDER BY id DESC")
+            payment_history = c.fetchall()
+
+            c.execute("SELECT * FROM assigned_tasks ORDER BY id DESC")
+            all_tasks_report = c.fetchall()
             
             selected_chat_user = request.args.get('chat_with')
             chat_messages = []
@@ -391,7 +470,8 @@ def home():
             return render_template_string(HTML_LAYOUT, staff_list=staff_list, 
                                          total_staff=total_staff, preset_comment=preset_comment, 
                                          admin_contact=admin_contact, selected_chat_user=selected_chat_user, 
-                                         chat_messages=chat_messages, search_query=search_query, all_work_reports=all_work_reports)
+                                         chat_messages=chat_messages, search_query=search_query, 
+                                         payment_history=payment_history, all_tasks_report=all_tasks_report)
         else:
             c.execute("SELECT * FROM attendance WHERE username=? AND date=?", (session['user'], today))
             today_log = c.fetchone()
@@ -418,6 +498,8 @@ def register_action():
     staff_name = request.form.get('staff_name')
     gmail = request.form.get('gmail')
     mobile = request.form.get('mobile')
+    payment_method = request.form.get('payment_method')
+    payment_number = request.form.get('payment_number')
     password = request.form.get('password')
     
     rand_num = random.randint(1000, 9999)
@@ -427,19 +509,14 @@ def register_action():
         conn = get_db()
         c = conn.cursor()
         c.execute("""INSERT INTO users 
-                     (username, staff_name, password, role, gmail, mobile, payment_method, payment_number) 
-                     VALUES (?, ?, ?, 'staff', ?, ?, 'Not Set', 'Not Set')""", 
-                  (username, staff_name, password, gmail, mobile))
+                     (username, staff_name, password, role, account_type, gmail, gmail_pass, mobile, payment_method, payment_number) 
+                     VALUES (?, ?, ?, 'staff', 'Registered', ?, 'User Set', ?, ?, ?)""", 
+                  (username, staff_name, password, gmail, mobile, payment_method, payment_number))
         conn.commit()
-        
-        c.execute("SELECT id FROM users WHERE username=?", (username,))
-        user_row = c.fetchone()
-        serial_id = user_row[0] if user_row else ""
-        
         conn.close()
-        flash(f'একাউন্ট সফলভাবে তৈরি হয়েছে! ইউজার আইডি: {username} এবং সিরিয়াল নং: #{serial_id}')
+        flash(f'একাউন্ট সফলভাবে রেজিস্টার হয়েছে! আপনার ইউজার আইডি: {username}')
     except:
-        flash('এই জিমেইল বা তথ্য দিয়ে ইতিমধ্যে একাউন্ট রয়েছে!')
+        flash('এই জিমেইল দিয়ে ইতিমধ্যে একাউন্ট রয়েছে!')
     return redirect('/')
 
 @app.route('/login', methods=['POST'])
@@ -476,6 +553,44 @@ def assign_task():
         flash('স্টাফের আইডিতে কাজ সফলভাবে পাঠানো হয়েছে!')
     return redirect('/')
 
+@app.route('/accept-task', methods=['POST'])
+def accept_task():
+    if 'user' in session:
+        task_id = request.form.get('task_id')
+        conn = get_db()
+        c = conn.cursor()
+        c.execute("UPDATE assigned_tasks SET status='Accepted' WHERE id=? AND username=?", (task_id, session['user']))
+        conn.commit()
+        conn.close()
+        flash('কাজটি সফলভাবে এক্সেপ্ট করা হয়েছে!')
+    return redirect('/')
+
+@app.route('/start-task', methods=['POST'])
+def start_task():
+    if 'user' in session:
+        task_id = request.form.get('task_id')
+        start_time = datetime.now().strftime('%I:%M %p, %d %b')
+        conn = get_db()
+        c = conn.cursor()
+        c.execute("UPDATE assigned_tasks SET start_time=? WHERE id=? AND username=?", (start_time, task_id, session['user']))
+        conn.commit()
+        conn.close()
+        flash('কাজের সময় শুরু হয়েছে!')
+    return redirect('/')
+
+@app.route('/finish-task', methods=['POST'])
+def finish_task():
+    if 'user' in session:
+        task_id = request.form.get('task_id')
+        end_time = datetime.now().strftime('%I:%M %p, %d %b')
+        conn = get_db()
+        c = conn.cursor()
+        c.execute("UPDATE assigned_tasks SET end_time=?, status='Completed' WHERE id=? AND username=?", (end_time, task_id, session['user']))
+        conn.commit()
+        conn.close()
+        flash('কাজ সফলভাবে সম্পন্ন ও শেষ হয়েছে!')
+    return redirect('/')
+
 @app.route('/create-staff', methods=['POST'])
 def create_staff():
     if session.get('role') == 'admin':
@@ -494,12 +609,12 @@ def create_staff():
                 conn = get_db()
                 c = conn.cursor()
                 c.execute("""INSERT INTO users 
-                             (username, staff_name, password, role, gmail, gmail_pass, mobile, payment_method, payment_number) 
-                             VALUES (?, ?, ?, 'staff', ?, ?, ?, ?, ?)""", 
+                             (username, staff_name, password, role, account_type, gmail, gmail_pass, mobile, payment_method, payment_number) 
+                             VALUES (?, ?, ?, 'staff', 'Extra', ?, ?, ?, ?, ?)""", 
                           (staff_user, staff_name, staff_pass, gmail, gmail_pass, mobile, payment_method, payment_number))
                 conn.commit()
                 conn.close()
-                flash('স্টাফ একাউন্ট সফলভাবে তৈরি করা হয়েছে!')
+                flash('এক্সট্রা স্টাফ অ্যাকাউন্ট সফলভাবে তৈরি করা হয়েছে!')
             except:
                 flash('এই ইউজার আইডিটি আগে থেকেই রয়েছে!')
         else:
@@ -512,14 +627,17 @@ def add_payment():
         staff_name = request.form.get('staff_name')
         month_year = request.form.get('month_year')
         amount = request.form.get('amount')
-        p_date = datetime.now().strftime('%Y-%m-%d')
+        payment_method = request.form.get('payment_method')
+        payment_number = request.form.get('payment_number')
+        p_date = datetime.now().strftime('%Y-%m-%d %I:%M %p')
+        
         conn = get_db()
         c = conn.cursor()
-        c.execute("INSERT INTO payments (username, month_year, amount, payment_date) VALUES (?, ?, ?, ?)", 
-                  (staff_name, month_year, amount, p_date))
+        c.execute("INSERT INTO payments (username, month_year, amount, payment_method, payment_number, payment_date) VALUES (?, ?, ?, ?, ?, ?)", 
+                  (staff_name, month_year, amount, payment_method, payment_number, p_date))
         conn.commit()
         conn.close()
-        flash('পেমেন্ট হিস্ট্রি যুক্ত করা হয়েছে!')
+        flash('পেমেন্ট হিস্ট্রি সফলভাবে যুক্ত করা হয়েছে!')
     return redirect('/')
 
 @app.route('/check-in', methods=['POST'])
