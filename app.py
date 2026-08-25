@@ -45,8 +45,9 @@ def init_db():
     c.execute('''CREATE TABLE IF NOT EXISTS system_config 
                  (id INTEGER PRIMARY KEY AUTOINCREMENT, preset_comment TEXT, admin_contact TEXT)''')
 
+    # Added is_read column for Message Notifications
     c.execute('''CREATE TABLE IF NOT EXISTS chats 
-                 (id INTEGER PRIMARY KEY AUTOINCREMENT, sender TEXT, receiver TEXT, message TEXT, image_url TEXT, timestamp TEXT)''')
+                 (id INTEGER PRIMARY KEY AUTOINCREMENT, sender TEXT, receiver TEXT, message TEXT, image_url TEXT, timestamp TEXT, is_read INTEGER DEFAULT 0)''')
 
     c.execute('''CREATE TABLE IF NOT EXISTS assigned_tasks 
                  (id INTEGER PRIMARY KEY AUTOINCREMENT, username TEXT, task_details TEXT, assigned_date TEXT, status TEXT, start_time TEXT, end_time TEXT)''')
@@ -54,7 +55,6 @@ def init_db():
     c.execute('''CREATE TABLE IF NOT EXISTS staff_notes 
                  (id INTEGER PRIMARY KEY AUTOINCREMENT, username TEXT, note TEXT, date_posted TEXT)''')
 
-    # Trash / Recycle Bin Table for deleted items safety
     c.execute('''CREATE TABLE IF NOT EXISTS trash_bin 
                  (id INTEGER PRIMARY KEY AUTOINCREMENT, item_type TEXT, item_details TEXT, deleted_time TEXT)''')
     
@@ -87,11 +87,11 @@ HTML_LAYOUT = """
         .btn-warning { background: #ffc107; color: black; }
         .stats-box { display: flex; gap: 10px; margin-bottom: 15px; }
         .stat-card { background: #28a745; color: white; padding: 15px; border-radius: 6px; flex: 1; text-align: center; font-size: 16px; }
+        .notification-badge { background: #dc3545; color: white; padding: 2px 6px; border-radius: 10px; font-size: 11px; font-weight: bold; }
         table { width: 100%; margin-top: 15px; border-collapse: collapse; font-size: 13px; display: block; overflow-x: auto; }
         th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
         th { background: #343a40; color: white; text-align: center; }
         .comment-box { background: #fff3cd; border: 1px solid #ffeeba; padding: 10px; border-radius: 5px; margin-bottom: 10px; }
-        .note-box { background: #e2e3e5; border: 1px solid #d6d8db; padding: 10px; border-radius: 5px; margin-bottom: 10px; }
         .chat-box { background: #f1f1f1; border: 1px solid #ccc; padding: 10px; border-radius: 5px; height: 220px; overflow-y: scroll; margin-bottom: 10px; }
         .chat-msg { margin: 8px 0; padding: 8px; border-radius: 6px; background: white; border: 1px solid #ddd; }
         .msg-admin { background: #d4edda; text-align: left; }
@@ -146,7 +146,14 @@ HTML_LAYOUT = """
             {% endif %}
         {% else %}
             <div style="display: flex; justify-content: space-between; align-items: center;">
-                <h3>{{ session['user'] }} ({{ session['role'] | upper }})</h3>
+                <h3>
+                    {{ session['user'] }} ({{ session['role'] | upper }})
+                    {% if session['role'] == 'admin' and total_unread_admin > 0 %}
+                        <span class="notification-badge">🔔 নতুন মেসেজ: {{ total_unread_admin }} টি</span>
+                    {% elif session['role'] == 'staff' and total_unread_staff > 0 %}
+                        <span class="notification-badge">🔔 নতুন মেসেজ: {{ total_unread_staff }} টি</span>
+                    {% endif %}
+                </h3>
                 <a href="/logout" style="color: red; font-weight: bold; text-decoration: none;">Logout</a>
             </div>
             <hr>
@@ -359,13 +366,16 @@ HTML_LAYOUT = """
                     <select name="chat_with" onchange="this.form.submit()">
                         <option value="">স্টাফ সিলেক্ট করুন</option>
                         {% for s in staff_list %}
-                        <option value="{{ s[1] }}" {% if selected_chat_user == s[1] %}selected{% endif %}>{{ s[2] }} (ID: {{ s[1] }})</option>
+                            {% set unread_count = unread_dict.get(s[1], 0) %}
+                            <option value="{{ s[1] }}" {% if selected_chat_user == s[1] %}selected{% endif %}>
+                                {{ s[2] }} (ID: {{ s[1] }}) {% if unread_count > 0 %} ⭐ [ নতুন মেসেজ: {{ unread_count }} টি ]{% endif %}
+                            </option>
                         {% endfor %}
                     </select>
                 </form>
 
                 {% if selected_chat_user %}
-                    <div class="chat-box">
+                    <div class="chat-box" id="chatBox">
                         {% for msg in chat_messages %}
                             <div class="chat-msg {% if msg[1] == 'Khushbu23' %}msg-admin{% else %}msg-staff{% endif %}">
                                 <small><b>{{ msg[1] }}</b> ({{ msg[5] }}):</small><br>
@@ -477,7 +487,7 @@ HTML_LAYOUT = """
 
                 <hr>
                 <h4>💬 এডমিনের সাথে চ্যাট করুন</h4>
-                <div class="chat-box">
+                <div class="chat-box" id="chatBox">
                     {% for msg in chat_messages %}
                         <div class="chat-msg {% if msg[1] == session['user'] %}msg-staff{% else %}msg-admin{% endif %}">
                             <small><b>{{ msg[1] }}</b> ({{ msg[5] }}):</small><br>
@@ -505,6 +515,16 @@ HTML_LAYOUT = """
                 }
                 </script>
             {% endif %}
+
+            <script>
+                // Auto scroll chat to bottom
+                window.onload = function() {
+                    var cb = document.getElementById("chatBox");
+                    if (cb) {
+                        cb.scrollTop = cb.scrollHeight;
+                    }
+                };
+            </script>
         {% endif %}
     </div>
 </body>
@@ -538,9 +558,23 @@ def home():
             c.execute("SELECT * FROM trash_bin ORDER BY id DESC")
             trash_items = c.fetchall()
             
+            # Count unread messages per staff for admin
+            unread_dict = {}
+            for s in staff_list:
+                c.execute("SELECT COUNT(*) FROM chats WHERE sender=? AND receiver='Khushbu23' AND is_read=0", (s[1],))
+                cnt = c.fetchone()[0]
+                unread_dict[s[1]] = cnt
+
+            c.execute("SELECT COUNT(*) FROM chats WHERE receiver='Khushbu23' AND is_read=0")
+            total_unread_admin = c.fetchone()[0]
+            
             selected_chat_user = request.args.get('chat_with')
             chat_messages = []
             if selected_chat_user:
+                # Mark messages as read when opening chat
+                c.execute("UPDATE chats SET is_read=1 WHERE sender=? AND receiver='Khushbu23'", (selected_chat_user,))
+                conn.commit()
+
                 c.execute("SELECT * FROM chats WHERE (sender=? AND receiver=?) OR (sender=? AND receiver=?) ORDER BY id ASC", 
                           ('Khushbu23', selected_chat_user, selected_chat_user, 'Khushbu23'))
                 chat_messages = c.fetchall()
@@ -567,14 +601,22 @@ def home():
                                          chat_messages=chat_messages, search_query=search_query, 
                                          admin_docs=admin_docs, trash_items=trash_items,
                                          detail_staff=detail_staff, staff_attendance_logs=staff_attendance_logs,
-                                         staff_work_logs=staff_work_logs)
+                                         staff_work_logs=staff_work_logs, unread_dict=unread_dict,
+                                         total_unread_admin=total_unread_admin)
         else:
             c.execute("SELECT * FROM attendance WHERE username=? AND date=?", (session['user'], today))
             today_log = c.fetchone()
             
+            # Mark messages as read for staff when viewing chat
+            c.execute("UPDATE chats SET is_read=1 WHERE sender='Khushbu23' AND receiver=?", (session['user'],))
+            conn.commit()
+
             c.execute("SELECT * FROM chats WHERE (sender=? AND receiver=?) OR (sender=? AND receiver=?) ORDER BY id ASC", 
                       (session['user'], 'Khushbu23', 'Khushbu23', session['user']))
             chat_messages = c.fetchall()
+
+            c.execute("SELECT COUNT(*) FROM chats WHERE sender='Khushbu23' AND receiver=? AND is_read=0", (session['user'],))
+            total_unread_staff = c.fetchone()[0]
 
             c.execute("SELECT * FROM assigned_tasks WHERE username=? ORDER BY id DESC", (session['user'],))
             assigned_tasks = c.fetchall()
@@ -585,7 +627,8 @@ def home():
             conn.close()
             return render_template_string(HTML_LAYOUT, today_log=today_log, preset_comment=preset_comment, 
                                          admin_contact=admin_contact, chat_messages=chat_messages, 
-                                         assigned_tasks=assigned_tasks, my_payment_notes=my_payment_notes)
+                                         assigned_tasks=assigned_tasks, my_payment_notes=my_payment_notes,
+                                         total_unread_staff=total_unread_staff)
             
     return render_template_string(HTML_LAYOUT)
 
@@ -908,7 +951,8 @@ def send_message():
         if message or image_url:
             conn = get_db()
             c = conn.cursor()
-            c.execute("INSERT INTO chats (sender, receiver, message, image_url, timestamp) VALUES (?, ?, ?, ?, ?)", 
+            # is_read is 0 by default for unread notification
+            c.execute("INSERT INTO chats (sender, receiver, message, image_url, timestamp, is_read) VALUES (?, ?, ?, ?, ?, 0)", 
                       (sender, receiver, message, image_url, timestamp))
             conn.commit()
             conn.close()
