@@ -1,4 +1,5 @@
 import sqlite3
+import random
 from datetime import datetime
 from flask import Flask, render_template_string, request, session, redirect, url_for, flash
 
@@ -82,6 +83,8 @@ HTML_LAYOUT = """
         details { background: #f8f9fa; padding: 10px; border: 1px solid #ddd; border-radius: 5px; margin-top: 15px; }
         summary { font-weight: bold; cursor: pointer; color: #333; }
         .search-box { background: #e9ecef; padding: 10px; border-radius: 5px; margin-bottom: 15px; }
+        .link-btn { text-align: center; margin-top: 15px; }
+        .link-btn a { color: #007bff; text-decoration: none; font-weight: bold; }
     </style>
 </head>
 <body>
@@ -93,12 +96,29 @@ HTML_LAYOUT = """
         {% endwith %}
 
         {% if not session.get('user') %}
-            <h2 style="text-align: center;">Staff & Admin Login</h2>
-            <form method="POST" action="/login">
-                <input type="text" name="username" placeholder="Enter Username / Staff ID" required><br>
-                <input type="password" name="password" placeholder="Enter Password" required><br>
-                <button type="submit">Login</button>
-            </form>
+            {% if request.path == '/register' %}
+                <h2 style="text-align: center;">নতুন স্টাফ অ্যাকাউন্ট রেজিস্টার করুন</h2>
+                <form method="POST" action="/register-action">
+                    <input type="text" name="staff_name" placeholder="আপনার নাম (Staff Name)" required><br>
+                    <input type="email" name="gmail" placeholder="জিমেইল এড্রেস (Gmail)" required><br>
+                    <input type="text" name="mobile" placeholder="মোবাইল নম্বর" required><br>
+                    <input type="password" name="password" placeholder="পাসওয়ার্ড তৈরি করুন" required><br>
+                    <button type="submit" class="btn-success">Register Account</button>
+                </form>
+                <div class="link-btn">
+                    <a href="/">← লগইন পেজে ফিরে যান</a>
+                </div>
+            {% else %}
+                <h2 style="text-align: center;">Staff & Admin Login</h2>
+                <form method="POST" action="/login">
+                    <input type="text" name="username" placeholder="Enter Username / Staff ID" required><br>
+                    <input type="password" name="password" placeholder="Enter Password" required><br>
+                    <button type="submit">Login</button>
+                </form>
+                <div class="link-btn">
+                    <p>একাউন্ট নেই? <a href="/register">নতুন একাউন্ট তৈরি করুন</a></p>
+                </div>
+            {% endif %}
         {% else %}
             <div style="display: flex; justify-content: space-between; align-items: center;">
                 <h3>{{ session['user'] }} ({{ session['role'] | upper }})</h3>
@@ -114,7 +134,7 @@ HTML_LAYOUT = """
                     </div>
                 </div>
 
-                <h3>নতুন স্টাফ অ্যাকাউন্ট তৈরি করুন</h3>
+                <h3>নতুন স্টাফ অ্যাকাউন্ট তৈরি করুন (এডমিন প্যানেল)</h3>
                 <form method="POST" action="/create-staff">
                     <input type="text" name="staff_user" placeholder="স্টাফ ইউজার আইডি (Login ID)" required><br>
                     <input type="text" name="staff_name" placeholder="স্টাফ নাম (Staff Name)" required><br>
@@ -171,7 +191,6 @@ HTML_LAYOUT = """
                 </details>
 
                 <hr>
-                <!-- সার্চ সিস্টেম -->
                 <div class="search-box">
                     <h4>🔍 স্টাফ খুঁজুন (Search System)</h4>
                     <form method="GET" action="/">
@@ -183,21 +202,21 @@ HTML_LAYOUT = """
                 <h4>স্টাফ প্রোফাইল ও পাসওয়ার্ড তালিকা</h4>
                 <table>
                     <tr>
-                        <th>ID</th>
+                        <th>Serial ID</th>
+                        <th>Username / ID</th>
                         <th>Name</th>
                         <th>Password</th>
                         <th>Gmail</th>
                         <th>Mobile</th>
-                        <th>Method & Number</th>
                     </tr>
                     {% for s in staff_list %}
                     <tr>
+                        <td><b>#{{ s[0] }}</b></td>
                         <td><b>{{ s[1] }}</b></td>
                         <td>{{ s[2] }}</td>
                         <td>{{ s[3] }}</td>
                         <td>{{ s[5] }}</td>
                         <td>{{ s[7] }}</td>
-                        <td>{{ s[8] }}: {{ s[9] }}</td>
                     </tr>
                     {% endfor %}
                 </table>
@@ -345,13 +364,48 @@ def home():
             
     return render_template_string(HTML_LAYOUT)
 
+@app.route('/register')
+def register_page():
+    return render_template_string(HTML_LAYOUT)
+
+@app.route('/register-action', methods=['POST'])
+def register_action():
+    staff_name = request.form.get('staff_name')
+    gmail = request.form.get('gmail')
+    mobile = request.form.get('mobile')
+    password = request.form.get('password')
+    
+    # অটো ইউজারনেম জেনারেট (যেমন: staff_xxxx)
+    rand_num = random.randint(1000, 9999)
+    username = f"staff_{rand_num}"
+    
+    try:
+        conn = get_db()
+        c = conn.cursor()
+        c.execute("""INSERT INTO users 
+                     (username, staff_name, password, role, gmail, mobile, payment_method, payment_number) 
+                     VALUES (?, ?, ?, 'staff', ?, ?, 'Not Set', 'Not Set')""", 
+                  (username, staff_name, password, gmail, mobile))
+        conn.commit()
+        
+        # সিরিয়াল আইডি পাওয়ার জন্য আইডি চেক করা
+        c.execute("SELECT id FROM users WHERE username=?", (username,))
+        user_row = c.fetchone()
+        serial_id = user_row[0] if user_row else ""
+        
+        conn.close()
+        flash(f'একাউন্ট সফলভাবে তৈরি হয়েছে! আপনার ইউজার আইডি: {username} এবং সিরিয়াল নং: #{serial_id}')
+    except:
+        flash('এই জিমেইল বা তথ্য দিয়ে ইতিমধ্যে একাউন্ট রয়েছে!')
+    return redirect('/')
+
 @app.route('/login', methods=['POST'])
 def login():
     username = request.form.get('username')
     password = request.form.get('password')
     conn = get_db()
     c = conn.cursor()
-    c.execute("SELECT * FROM users WHERE username=? AND password=?", (username, password))
+    c.execute("SELECT * FROM users WHERE (username=? OR gmail=?) AND password=?", (username, username, password))
     user = c.fetchone()
     conn.close()
     
