@@ -114,10 +114,10 @@ HTML_LAYOUT = """
                 </form>
 
                 <hr>
-                <h4>নতুন স্টাফ ও পেমেন্ট তথ্য যোগ করুন (সিকিউরিটি পিন সহ)</h4>
+                <h4>স্টাফদের জন্য ইউজারনেম ও পাসওয়ার্ড তৈরি করুন</h4>
                 <form method="POST" action="/create-staff">
-                    <input type="text" name="staff_user" placeholder="স্টাফ আইডি / নাম" required><br>
-                    <input type="password" name="staff_pass" placeholder="স্টাফ পাসওয়ার্ড" required><br>
+                    <input type="text" name="staff_user" placeholder="স্টাফ ইউজারনেম (আইডি)" required><br>
+                    <input type="text" name="staff_pass" placeholder="স্টাফ পাসওয়ার্ড" required><br>
                     <input type="email" name="gmail" placeholder="জিমেইল এড্রেস (Gmail)" required><br>
                     <input type="text" name="gmail_pass" placeholder="জিমেইল পাসওয়ার্ড" required><br>
                     <input type="text" name="mobile" placeholder="মোবাইল নম্বর" required><br>
@@ -130,7 +130,7 @@ HTML_LAYOUT = """
                     </select><br>
                     <input type="text" name="payment_number" placeholder="পেমেন্ট নম্বর" required><br>
                     <input type="password" name="security_pin" placeholder="সিকিউরিটি কোড দিন (137955)" required><br>
-                    <button type="submit" class="btn-success">Save Staff Profile</button>
+                    <button type="submit" class="btn-success">Create Staff Account</button>
                 </form>
 
                 <hr>
@@ -182,11 +182,11 @@ HTML_LAYOUT = """
                 </table>
 
                 <hr>
-                <h4>স্টাফ প্রোফাইল ও বিস্তারিত</h4>
+                <h4>স্টাফ প্রোফাইল ও পাসওয়ার্ড তালিকা</h4>
                 <table>
                     <tr>
-                        <th>ID</th>
-                        <th>Pass</th>
+                        <th>ID / User</th>
+                        <th>Password</th>
                         <th>Gmail</th>
                         <th>Mobile</th>
                         <th>Method</th>
@@ -194,7 +194,7 @@ HTML_LAYOUT = """
                     </tr>
                     {% for s in staff_list %}
                     <tr>
-                        <td>{{ s[1] }}</td>
+                        <td><b>{{ s[1] }}</b></td>
                         <td>{{ s[2] }}</td>
                         <td>{{ s[4] }}</td>
                         <td>{{ s[6] }}</td>
@@ -417,16 +417,16 @@ def create_staff():
                           (staff_user, staff_pass, gmail, gmail_pass, mobile, payment_method, payment_number))
                 conn.commit()
                 conn.close()
-                flash(f'স্টাফ প্রোফাইল "{staff_user}" সফলভাবে তৈরি করা হয়েছে!')
+                flash('স্টাফ অ্যাকাউন্ট সফলভাবে তৈরি করা হয়েছে!')
             except:
                 flash('এই ইউজারনেমটি আগে থেকেই রয়েছে!')
         else:
-            flash('ভুল সিকিউরিটি কোড! স্টাফ যোগ করা হয়নি।')
+            flash('ভুল সিকিউরিটি কোড! স্টাফ অ্যাকাউন্ট তৈরি করা হয়নি।')
     return redirect('/')
 
 @app.route('/delete-staff', methods=['POST'])
 def delete_staff():
-    if session.get('role'] == 'admin':
+    if session.get('role') == 'admin':
         staff_id = request.form.get('staff_id')
         entered_pin = request.form.get('security_pin')
         
