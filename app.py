@@ -15,7 +15,6 @@ def init_db():
     conn = get_db()
     c = conn.cursor()
     
-    # users টেবিলে staff_name আলাদা করা হয়েছে
     c.execute('''CREATE TABLE IF NOT EXISTS users 
                  (id INTEGER PRIMARY KEY AUTOINCREMENT, 
                   username TEXT UNIQUE, 
@@ -40,7 +39,6 @@ def init_db():
     c.execute('''CREATE TABLE IF NOT EXISTS system_config 
                  (id INTEGER PRIMARY KEY AUTOINCREMENT, preset_comment TEXT, admin_contact TEXT)''')
 
-    # লাইভ চ্যাটের টেবিল
     c.execute('''CREATE TABLE IF NOT EXISTS chats 
                  (id INTEGER PRIMARY KEY AUTOINCREMENT, sender TEXT, receiver TEXT, message TEXT, timestamp TEXT)''')
     
@@ -319,7 +317,6 @@ def home():
             c.execute("SELECT * FROM attendance WHERE username=? AND date=?", (session['user'], today))
             today_log = c.fetchone()
             
-            # স্টাফের জন্য চ্যাট হিস্ট্রি
             c.execute("SELECT * FROM chats WHERE (sender=? AND receiver=?) OR (sender=? AND receiver=?) ORDER BY id ASC", 
                       (session['user'], 'Khushbu23', 'Khushbu23', session['user']))
             chat_messages = c.fetchall()
@@ -341,8 +338,8 @@ def login():
     conn.close()
     
     if user:
-        session['user'] = user[1]  # username
-        session['role'] = user[4]  # role
+        session['user'] = user[1]
+        session['role'] = user[4]
         flash('লগইন সফল হয়েছে!')
     else:
         flash('ভুল আইডি অথবা পাসওয়ার্ড!')
@@ -408,7 +405,7 @@ def delete_staff():
 
 @app.route('/add-payment', methods=['POST'])
 def add_payment():
-    if session.get('role'] == 'admin':
+    if session.get('role') == 'admin':
         staff_name = request.form.get('staff_name')
         month_year = request.form.get('month_year')
         amount = request.form.get('amount')
