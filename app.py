@@ -5,12 +5,15 @@ from flask import Flask, render_template_string, request, session, redirect, url
 app = Flask(__name__)
 app.secret_key = 'admin_super_secret_key'
 
-SECURITY_PIN = "137955"  # সিকিউরিটি পিন
+SECURITY_PIN = "137955"
+
+def get_db():
+    conn = sqlite3.connect('attendance.db')
+    return conn
 
 def init_db():
-    conn = sqlite3.connect('attendance.db')
+    conn = get_db()
     c = conn.cursor()
-    
     c.execute('''CREATE TABLE IF NOT EXISTS users 
                  (id INTEGER PRIMARY KEY AUTOINCREMENT, 
                   username TEXT UNIQUE, 
@@ -57,13 +60,13 @@ HTML_LAYOUT = """
         body { font-family: Arial; margin: 15px; background: #eef2f3; }
         .card { background: white; padding: 20px; border-radius: 8px; max-width: 850px; margin: 0 auto; box-shadow: 0 4px 8px rgba(0,0,0,0.1); }
         input, select, textarea { width: 93%; padding: 8px; margin: 5px 0; border: 1px solid #ccc; border-radius: 4px; }
-        button, .btn-link { background: #007bff; color: white; border: none; padding: 10px; width: 97%; cursor: pointer; border-radius: 4px; font-weight: bold; margin-top: 5px; text-decoration: none; display: inline-block; text-align: center; }
+        button { background: #007bff; color: white; border: none; padding: 10px; width: 97%; cursor: pointer; border-radius: 4px; font-weight: bold; margin-top: 5px; }
         .btn-danger { background: #dc3545; }
         .btn-success { background: #28a745; }
         .btn-warning { background: #ffc107; color: black; }
         .stats-box { display: flex; gap: 10px; margin-bottom: 15px; }
         .stat-card { background: #007bff; color: white; padding: 10px; border-radius: 6px; flex: 1; text-align: center; }
-        table { width: 100%; margin-top: 15px; border-collapse: collapse; font-size: 13px; overflow-x: auto; display: block; }
+        table { width: 100%; margin-top: 15px; border-collapse: collapse; font-size: 13px; display: block; overflow-x: auto; }
         th, td { border: 1px solid #ddd; padding: 8px; text-align: center; }
         th { background: #343a40; color: white; }
         .comment-box { background: #fff3cd; border: 1px solid #ffeeba; padding: 10px; border-radius: 5px; margin-bottom: 10px; }
@@ -90,7 +93,7 @@ HTML_LAYOUT = """
         {% else %}
             <div style="display: flex; justify-content: space-between; align-items: center;">
                 <h3>{{ session['user'] }} ({{ session['role'] | upper }})</h3>
-                <a href="/logout" style="color: red; font-weight: bold;">Logout</a>
+                <a href="/logout" style="color: red; font-weight: bold; text-decoration: none;">Logout</a>
             </div>
             <hr>
 
@@ -121,25 +124,22 @@ HTML_LAYOUT = """
                     <button type="submit" class="btn-success">Create Staff Account</button>
                 </form>
 
-                <hr>
                 <details>
-                    <summary>⚙️ অন্যান্য সেটিংস ও এডমিন টুলস (এখানে ক্লিক করুন)</summary>
+                    <summary>⚙️ অন্যান্য সেটিংস ও এডমিন টুলস</summary>
                     <div style="margin-top: 10px;">
                         <h4>কাজের কমেন্ট (Comment) সেট করুন</h4>
                         <form method="POST" action="/update-preset-comment">
                             <textarea name="preset_comment" rows="3" placeholder="স্টাফদের জন্য কমেন্ট লিখুন..." required>{{ preset_comment }}</textarea><br>
                             <button type="submit" class="btn-warning">Update Default Comment</button>
                         </form>
-
                         <hr>
                         <h4>এডমিন যোগাযোগের তথ্য সেট করুন</h4>
                         <form method="POST" action="/update-contact">
                             <input type="text" name="admin_contact" value="{{ admin_contact }}" placeholder="যেমন: WhatsApp / Mobile: 01751947523" required><br>
                             <button type="submit" class="btn-success">Update Contact Info</button>
                         </form>
-
                         <hr>
-                        <h4>স্টাফ ডিলিট করুন (সিকিউরিটি পিন প্রয়োজন)</h4>
+                        <h4>স্টাফ ডিলিট করুন</h4>
                         <form method="POST" action="/delete-staff">
                             <select name="staff_id" required>
                                 <option value="">ডিলিট করার জন্য স্টাফ সিলেক্ট করুন</option>
@@ -150,7 +150,6 @@ HTML_LAYOUT = """
                             <input type="password" name="security_pin" placeholder="সিকিউরিটি পিন দিন (137955)" required><br>
                             <button type="submit" class="btn-danger">Delete Staff Profile</button>
                         </form>
-
                         <hr>
                         <h4>মাসিক পেমেন্ট রেকর্ড যুক্ত করুন</h4>
                         <form method="POST" action="/add-payment">
@@ -166,27 +165,6 @@ HTML_LAYOUT = """
                         </form>
                     </div>
                 </details>
-
-                <hr>
-                <h4>জিমেইল অনুযায়ী কাজের জমা লিস্ট</h4>
-                <table>
-                    <tr>
-                        <th>Staff</th>
-                        <th>Gmail Used</th>
-                        <th>Work Count</th>
-                        <th>Comment Used</th>
-                        <th>Date</th>
-                    </tr>
-                    {% for gw in gmail_logs %}
-                    <tr>
-                        <td>{{ gw[1] }}</td>
-                        <td>{{ gw[2] }}</td>
-                        <td>{{ gw[3] }}</td>
-                        <td>{{ gw[4] }}</td>
-                        <td>{{ gw[5] }}</td>
-                    </tr>
-                    {% endfor %}
-                </table>
 
                 <hr>
                 <h4>স্টাফ প্রোফাইল ও পাসওয়ার্ড তালিকা</h4>
@@ -210,45 +188,6 @@ HTML_LAYOUT = """
                     </tr>
                     {% endfor %}
                 </table>
-
-                <hr>
-                <h4>মাসিক পেমেন্ট হিস্ট্রি</h4>
-                <table>
-                    <tr>
-                        <th>Staff</th>
-                        <th>Month/Year</th>
-                        <th>Amount</th>
-                        <th>Paid Date</th>
-                    </tr>
-                    {% for p in payment_logs %}
-                    <tr>
-                        <td>{{ p[1] }}</td>
-                        <td>{{ p[2] }}</td>
-                        <td>{{ p[3] }} TK</td>
-                        <td>{{ p[4] }}</td>
-                    </tr>
-                    {% endfor %}
-                </table>
-
-                <hr>
-                <h4>হাজিরা লগ</h4>
-                <table>
-                    <tr>
-                        <th>Staff</th>
-                        <th>Date</th>
-                        <th>In Time</th>
-                        <th>Out Time</th>
-                    </tr>
-                    {% for row in logs %}
-                    <tr>
-                        <td>{{ row[1] }}</td>
-                        <td>{{ row[4] }}</td>
-                        <td>{{ row[2] if row[2] else 'Not Yet' }}</td>
-                        <td>{{ row[3] if row[3] else 'Not Yet' }}</td>
-                    </tr>
-                    {% endfor %}
-                </table>
-
             {% else %}
                 <h4>স্টাফ প্যানেল</h4>
                 {% if not today_log or not today_log[2] %}
@@ -287,31 +226,12 @@ HTML_LAYOUT = """
                     <p style="margin: 5px 0; font-size: 15px;">{{ admin_contact }}</p>
                 </div>
 
-                <hr>
-                <h4>আপনার প্রাপ্ত পেমেন্ট হিস্ট্রি</h4>
-                <table>
-                    <tr>
-                        <th>Month/Year</th>
-                        <th>Amount</th>
-                        <th>Date Received</th>
-                    </tr>
-                    {% for my_p in my_payments %}
-                    <tr>
-                        <td>{{ my_p[2] }}</td>
-                        <td>{{ my_p[3] }} TK</td>
-                        <td>{{ my_p[4] }}</td>
-                    </tr>
-                    {% endfor %}
-                </table>
-
                 <script>
                 function copyAndOpenGmail() {
                     var comment = document.getElementById("commentText").innerText;
                     navigator.clipboard.writeText(comment).then(function() {
                         alert("কমেন্ট কপি হয়েছে! এখন জিমেইল ওপেন হচ্ছে...");
                         window.open("https://mail.google.com", "_blank");
-                    }, function() {
-                        alert("কপি করতে সমস্যা হয়েছে!");
                     });
                 }
                 </script>
@@ -325,7 +245,7 @@ HTML_LAYOUT = """
 @app.route('/')
 def home():
     if 'user' in session:
-        conn = sqlite3.connect('attendance.db')
+        conn = get_db()
         c = conn.cursor()
         today = datetime.now().strftime('%Y-%m-%d')
         
@@ -343,7 +263,6 @@ def home():
             gmail_logs = c.fetchall()
             c.execute("SELECT * FROM payments ORDER BY id DESC")
             payment_logs = c.fetchall()
-            
             total_staff = len(staff_list)
             conn.close()
             return render_template_string(HTML_LAYOUT, logs=logs, staff_list=staff_list, 
@@ -363,8 +282,7 @@ def home():
 def login():
     username = request.form.get('username')
     password = request.form.get('password')
-    
-    conn = sqlite3.connect('attendance.db')
+    conn = get_db()
     c = conn.cursor()
     c.execute("SELECT * FROM users WHERE username=? AND password=?", (username, password))
     user = c.fetchone()
@@ -382,7 +300,7 @@ def login():
 def update_preset_comment():
     if session.get('role') == 'admin':
         comment = request.form.get('preset_comment')
-        conn = sqlite3.connect('attendance.db')
+        conn = get_db()
         c = conn.cursor()
         c.execute("UPDATE system_config SET preset_comment=? WHERE id=1", (comment,))
         conn.commit()
@@ -394,7 +312,7 @@ def update_preset_comment():
 def update_contact():
     if session.get('role') == 'admin':
         contact = request.form.get('admin_contact')
-        conn = sqlite3.connect('attendance.db')
+        conn = get_db()
         c = conn.cursor()
         c.execute("UPDATE system_config SET admin_contact=? WHERE id=1", (contact,))
         conn.commit()
@@ -416,7 +334,7 @@ def create_staff():
         
         if entered_pin == SECURITY_PIN:
             try:
-                conn = sqlite3.connect('attendance.db')
+                conn = get_db()
                 c = conn.cursor()
                 c.execute("""INSERT INTO users 
                              (username, password, role, gmail, gmail_pass, mobile, payment_method, payment_number) 
@@ -428,7 +346,7 @@ def create_staff():
             except:
                 flash('এই ইউজারনেমটি আগে থেকেই রয়েছে!')
         else:
-            flash('ভুল সিকিউরিটি কোড! স্টাফ অ্যাকাউন্ট তৈরি করা হয়নি।')
+            flash('ভুল সিকিউরিটি কোড!')
     return redirect('/')
 
 @app.route('/delete-staff', methods=['POST'])
@@ -436,27 +354,25 @@ def delete_staff():
     if session.get('role') == 'admin':
         staff_id = request.form.get('staff_id')
         entered_pin = request.form.get('security_pin')
-        
         if entered_pin == SECURITY_PIN:
-            conn = sqlite3.connect('attendance.db')
+            conn = get_db()
             c = conn.cursor()
             c.execute("DELETE FROM users WHERE id=?", (staff_id,))
             conn.commit()
             conn.close()
-            flash('স্টাফ প্রোফাইল সফলভাবে ডিলিট করা হয়েছে!')
+            flash('স্টাফ প্রোফাইল ডিলিট করা হয়েছে!')
         else:
-            flash('ভুল সিকিউরিটি পিন! স্টাফ ডিলিট করা হয়নি।')
+            flash('ভুল সিকিউরিটি পিন!')
     return redirect('/')
 
 @app.route('/add-payment', methods=['POST'])
 def add_payment():
-    if session.get('role'] == 'admin':
+    if session.get('role') == 'admin':
         staff_name = request.form.get('staff_name')
         month_year = request.form.get('month_year')
         amount = request.form.get('amount')
         p_date = datetime.now().strftime('%Y-%m-%d')
-        
-        conn = sqlite3.connect('attendance.db')
+        conn = get_db()
         c = conn.cursor()
         c.execute("INSERT INTO payments (username, month_year, amount, payment_date) VALUES (?, ?, ?, ?)", 
                   (staff_name, month_year, amount, p_date))
@@ -471,8 +387,7 @@ def check_in():
         now = datetime.now()
         time_str = now.strftime('%I:%M %p')
         date_str = now.strftime('%Y-%m-%d')
-        
-        conn = sqlite3.connect('attendance.db')
+        conn = get_db()
         c = conn.cursor()
         c.execute("INSERT INTO attendance (username, check_in, date) VALUES (?, ?, ?)", (session['user'], time_str, date_str))
         conn.commit()
@@ -487,14 +402,13 @@ def submit_gmail_work():
         work_count = request.form.get('work_count')
         comment_used = request.form.get('comment_used')
         date_str = datetime.now().strftime('%Y-%m-%d')
-        
-        conn = sqlite3.connect('attendance.db')
+        conn = get_db()
         c = conn.cursor()
         c.execute("INSERT INTO gmail_work (username, gmail_used, work_count, comment_used, date) VALUES (?, ?, ?, ?, ?)", 
                   (session['user'], gmail_used, work_count, comment_used, date_str))
         conn.commit()
         conn.close()
-        flash('জিমেইলে কাজের হিসাব জমা হয়েছে!')
+        flash('কাজের হিসাব জমা হয়েছে!')
     return redirect('/')
 
 @app.route('/check-out', methods=['POST'])
@@ -503,8 +417,7 @@ def check_out():
         now = datetime.now()
         time_str = now.strftime('%I:%M %p')
         today = datetime.now().strftime('%Y-%m-%d')
-        
-        conn = sqlite3.connect('attendance.db')
+        conn = get_db()
         c = conn.cursor()
         c.execute("UPDATE attendance SET check_out=? WHERE username=? AND date=?", (time_str, session['user'], today))
         conn.commit()
