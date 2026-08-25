@@ -5,7 +5,7 @@ from flask import Flask, render_template_string, request, session, redirect, url
 app = Flask(__name__)
 app.secret_key = 'admin_super_secret_key'
 
-SECURITY_PIN = "137955"
+SECURITY_PIN = "137955"  # সিকিউরিটি পিন
 
 def init_db():
     conn = sqlite3.connect('attendance.db')
@@ -32,7 +32,7 @@ def init_db():
                  (id INTEGER PRIMARY KEY AUTOINCREMENT, username TEXT, month_year TEXT, amount REAL, payment_date TEXT)''')
 
     c.execute('''CREATE TABLE IF NOT EXISTS system_config 
-                 (id INTEGER PRIMARY KEY AUTOINCREMENT, preset_comment TEXT)''')
+                 (id INTEGER PRIMARY KEY AUTOINCREMENT, preset_comment TEXT, admin_contact TEXT)''')
     
     c.execute("SELECT * FROM users WHERE username='Khushbu23'")
     if not c.fetchone():
@@ -40,7 +40,7 @@ def init_db():
     
     c.execute("SELECT * FROM system_config")
     if not c.fetchone():
-        c.execute("INSERT INTO system_config (preset_comment) VALUES ('Great service! Highly recommended.')")
+        c.execute("INSERT INTO system_config (preset_comment, admin_contact) VALUES ('Great service! Highly recommended.', 'WhatsApp / Call: 01751947523')")
 
     conn.commit()
     conn.close()
@@ -67,6 +67,7 @@ HTML_LAYOUT = """
         th, td { border: 1px solid #ddd; padding: 8px; text-align: center; }
         th { background: #343a40; color: white; }
         .comment-box { background: #fff3cd; border: 1px solid #ffeeba; padding: 10px; border-radius: 5px; margin-bottom: 10px; }
+        .contact-box { background: #d1ecf1; border: 1px solid #bee5eb; padding: 10px; border-radius: 5px; margin-top: 15px; color: #0c5460; text-align: center; }
     </style>
 </head>
 <body>
@@ -80,8 +81,8 @@ HTML_LAYOUT = """
         {% if not session.get('user') %}
             <h2 style="text-align: center;">Staff & Admin Login</h2>
             <form method="POST" action="/login">
-                <input type="text" name="username" placeholder="Username (Khushbu23)" required><br>
-                <input type="password" name="password" placeholder="Password (01751947523)" required><br>
+                <input type="text" name="username" placeholder="Enter Username" required><br>
+                <input type="password" name="password" placeholder="Enter Password" required><br>
                 <button type="submit">Login</button>
             </form>
         {% else %}
@@ -99,17 +100,24 @@ HTML_LAYOUT = """
                     </div>
                 </div>
 
-                <h4>কাজের কমেন্ট (Comment) সেট বা আপডেট করুন</h4>
+                <h4>কাজের কমেন্ট (Comment) সেট করুন</h4>
                 <form method="POST" action="/update-preset-comment">
                     <textarea name="preset_comment" rows="3" placeholder="স্টাফদের জন্য কমেন্ট লিখুন..." required>{{ preset_comment }}</textarea><br>
                     <button type="submit" class="btn-warning">Update Default Comment</button>
                 </form>
 
                 <hr>
-                <h4>নতুন স্টাফ ও পেমেন্ট তথ্য যোগ করুন</h4>
+                <h4>এডমিন যোগাযোগের তথ্য সেট করুন</h4>
+                <form method="POST" action="/update-contact">
+                    <input type="text" name="admin_contact" value="{{ admin_contact }}" placeholder="যেমন: WhatsApp / Mobile: 01751947523" required><br>
+                    <button type="submit" class="btn-success">Update Contact Info</button>
+                </form>
+
+                <hr>
+                <h4>নতুন স্টাফ ও পেমেন্ট তথ্য যোগ করুন (সিকিউরিটি পিন সহ)</h4>
                 <form method="POST" action="/create-staff">
-                    <input type="text" name="staff_user" placeholder="কাজের আইডি (Username)" required><br>
-                    <input type="password" name="staff_pass" placeholder="কাজের পাসওয়ার্ড" required><br>
+                    <input type="text" name="staff_user" placeholder="স্টাফ আইডি / নাম" required><br>
+                    <input type="password" name="staff_pass" placeholder="স্টাফ পাসওয়ার্ড" required><br>
                     <input type="email" name="gmail" placeholder="জিমেইল এড্রেস (Gmail)" required><br>
                     <input type="text" name="gmail_pass" placeholder="জিমেইল পাসওয়ার্ড" required><br>
                     <input type="text" name="mobile" placeholder="মোবাইল নম্বর" required><br>
@@ -120,7 +128,8 @@ HTML_LAYOUT = """
                         <option value="Upay">উপায় (Upay)</option>
                         <option value="Bank">ব্যাংক (Bank Account)</option>
                     </select><br>
-                    <input type="text" name="payment_number" placeholder="পেমেন্ট নম্বর / ব্যাংক একাউন্ট বিবরণ" required><br>
+                    <input type="text" name="payment_number" placeholder="পেমেন্ট নম্বর" required><br>
+                    <input type="password" name="security_pin" placeholder="সিকিউরিটি কোড দিন (137955)" required><br>
                     <button type="submit" class="btn-success">Save Staff Profile</button>
                 </form>
 
@@ -215,7 +224,7 @@ HTML_LAYOUT = """
                 </table>
 
                 <hr>
-                <h4>হাজিরা (Check In/Out) লগ</h4>
+                <h4>হাজিরা লগ</h4>
                 <table>
                     <tr>
                         <th>Staff</th>
@@ -266,6 +275,11 @@ HTML_LAYOUT = """
                     {% endif %}
                 {% endif %}
 
+                <div class="contact-box">
+                    <p style="margin: 0;"><b>এডমিনের সাথে যোগাযোগের মাধ্যম:</b></p>
+                    <p style="margin: 5px 0; font-size: 15px;">{{ admin_contact }}</p>
+                </div>
+
                 <hr>
                 <h4>আপনার প্রাপ্ত পেমেন্ট হিস্ট্রি</h4>
                 <table>
@@ -308,9 +322,10 @@ def home():
         c = conn.cursor()
         today = datetime.now().strftime('%Y-%m-%d')
         
-        c.execute("SELECT preset_comment FROM system_config LIMIT 1")
-        preset = c.fetchone()
-        preset_comment = preset[0] if preset else ""
+        c.execute("SELECT preset_comment, admin_contact FROM system_config LIMIT 1")
+        config = c.fetchone()
+        preset_comment = config[0] if config else ""
+        admin_contact = config[1] if config else ""
         
         if session['role'] == 'admin':
             c.execute("SELECT * FROM attendance ORDER BY id DESC")
@@ -326,14 +341,14 @@ def home():
             conn.close()
             return render_template_string(HTML_LAYOUT, logs=logs, staff_list=staff_list, 
                                          gmail_logs=gmail_logs, payment_logs=payment_logs, 
-                                         total_staff=total_staff, preset_comment=preset_comment)
+                                         total_staff=total_staff, preset_comment=preset_comment, admin_contact=admin_contact)
         else:
             c.execute("SELECT * FROM attendance WHERE username=? AND date=?", (session['user'], today))
             today_log = c.fetchone()
             c.execute("SELECT * FROM payments WHERE username=? ORDER BY id DESC", (session['user'],))
             my_payments = c.fetchall()
             conn.close()
-            return render_template_string(HTML_LAYOUT, today_log=today_log, my_payments=my_payments, preset_comment=preset_comment)
+            return render_template_string(HTML_LAYOUT, today_log=today_log, my_payments=my_payments, preset_comment=preset_comment, admin_contact=admin_contact)
             
     return render_template_string(HTML_LAYOUT)
 
@@ -368,6 +383,18 @@ def update_preset_comment():
         flash('ডিফল্ট কমেন্ট আপডেট করা হয়েছে!')
     return redirect('/')
 
+@app.route('/update-contact', methods=['POST'])
+def update_contact():
+    if session.get('role') == 'admin':
+        contact = request.form.get('admin_contact')
+        conn = sqlite3.connect('attendance.db')
+        c = conn.cursor()
+        c.execute("UPDATE system_config SET admin_contact=? WHERE id=1", (contact,))
+        conn.commit()
+        conn.close()
+        flash('যোগাযোগের তথ্য আপডেট করা হয়েছে!')
+    return redirect('/')
+
 @app.route('/create-staff', methods=['POST'])
 def create_staff():
     if session.get('role') == 'admin':
@@ -378,24 +405,28 @@ def create_staff():
         mobile = request.form.get('mobile')
         payment_method = request.form.get('payment_method')
         payment_number = request.form.get('payment_number')
+        entered_pin = request.form.get('security_pin')
         
-        try:
-            conn = sqlite3.connect('attendance.db')
-            c = conn.cursor()
-            c.execute("""INSERT INTO users 
-                         (username, password, role, gmail, gmail_pass, mobile, payment_method, payment_number) 
-                         VALUES (?, ?, 'staff', ?, ?, ?, ?, ?)""", 
-                      (staff_user, staff_pass, gmail, gmail_pass, mobile, payment_method, payment_number))
-            conn.commit()
-            conn.close()
-            flash(f'স্টাফ প্রোফাইল "{staff_user}" তৈরি করা হয়েছে!')
-        except:
-            flash('এই ইউজারনেমটি আগে থেকেই রয়েছে!')
+        if entered_pin == SECURITY_PIN:
+            try:
+                conn = sqlite3.connect('attendance.db')
+                c = conn.cursor()
+                c.execute("""INSERT INTO users 
+                             (username, password, role, gmail, gmail_pass, mobile, payment_method, payment_number) 
+                             VALUES (?, ?, 'staff', ?, ?, ?, ?, ?)""", 
+                          (staff_user, staff_pass, gmail, gmail_pass, mobile, payment_method, payment_number))
+                conn.commit()
+                conn.close()
+                flash(f'স্টাফ প্রোফাইল "{staff_user}" সফলভাবে তৈরি করা হয়েছে!')
+            except:
+                flash('এই ইউজারনেমটি আগে থেকেই রয়েছে!')
+        else:
+            flash('ভুল সিকিউরিটি কোড! স্টাফ যোগ করা হয়নি।')
     return redirect('/')
 
 @app.route('/delete-staff', methods=['POST'])
 def delete_staff():
-    if session.get('role') == 'admin':
+    if session.get('role'] == 'admin':
         staff_id = request.form.get('staff_id')
         entered_pin = request.form.get('security_pin')
         
