@@ -68,6 +68,8 @@ HTML_LAYOUT = """
         th { background: #343a40; color: white; }
         .comment-box { background: #fff3cd; border: 1px solid #ffeeba; padding: 10px; border-radius: 5px; margin-bottom: 10px; }
         .contact-box { background: #d1ecf1; border: 1px solid #bee5eb; padding: 10px; border-radius: 5px; margin-top: 15px; color: #0c5460; text-align: center; }
+        details { background: #f8f9fa; padding: 10px; border: 1px solid #ddd; border-radius: 5px; margin-top: 15px; }
+        summary { font-weight: bold; cursor: pointer; color: #333; }
     </style>
 </head>
 <body>
@@ -100,65 +102,71 @@ HTML_LAYOUT = """
                     </div>
                 </div>
 
-                <h4>কাজের কমেন্ট (Comment) সেট করুন</h4>
-                <form method="POST" action="/update-preset-comment">
-                    <textarea name="preset_comment" rows="3" placeholder="স্টাফদের জন্য কমেন্ট লিখুন..." required>{{ preset_comment }}</textarea><br>
-                    <button type="submit" class="btn-warning">Update Default Comment</button>
-                </form>
-
-                <hr>
-                <h4>এডমিন যোগাযোগের তথ্য সেট করুন</h4>
-                <form method="POST" action="/update-contact">
-                    <input type="text" name="admin_contact" value="{{ admin_contact }}" placeholder="যেমন: WhatsApp / Mobile: 01751947523" required><br>
-                    <button type="submit" class="btn-success">Update Contact Info</button>
-                </form>
-
-                <hr>
-                <h4>স্টাফদের জন্য ইউজারনেম ও পাসওয়ার্ড তৈরি করুন</h4>
+                <h3>নতুন স্টাফ অ্যাকাউন্ট তৈরি করুন</h3>
                 <form method="POST" action="/create-staff">
-                    <input type="text" name="staff_user" placeholder="স্টাফ ইউজারনেম (আইডি)" required><br>
-                    <input type="text" name="staff_pass" placeholder="স্টাফ পাসওয়ার্ড" required><br>
+                    <input type="text" name="staff_user" placeholder="স্টাফ আইডি / ইউজারনেম" required><br>
                     <input type="email" name="gmail" placeholder="জিমেইল এড্রেস (Gmail)" required><br>
                     <input type="text" name="gmail_pass" placeholder="জিমেইল পাসওয়ার্ড" required><br>
+                    <input type="text" name="staff_pass" placeholder="সাধারণ পাসওয়ার্ড (লগইনের জন্য)" required><br>
                     <input type="text" name="mobile" placeholder="মোবাইল নম্বর" required><br>
-                    <select name="payment_method">
+                    <select name="payment_method" required>
                         <option value="bKash">বিকাশ (bKash)</option>
                         <option value="Nagad">নগদ (Nagad)</option>
                         <option value="Rocket">রকেট (Rocket)</option>
                         <option value="Upay">উপায় (Upay)</option>
-                        <option value="Bank">ব্যাংক (Bank Account)</option>
+                        <option value="Bank">ব্যাংক অ্যাকাউন্ট (Bank)</option>
                     </select><br>
-                    <input type="text" name="payment_number" placeholder="পেমেন্ট নম্বর" required><br>
+                    <input type="text" name="payment_number" placeholder="পেমেন্ট নম্বর / অ্যাকাউন্ট নম্বর" required><br>
                     <input type="password" name="security_pin" placeholder="সিকিউরিটি কোড দিন (137955)" required><br>
                     <button type="submit" class="btn-success">Create Staff Account</button>
                 </form>
 
                 <hr>
-                <h4>স্টাফ ডিলিট করুন (সিকিউরিটি পিন প্রয়োজন)</h4>
-                <form method="POST" action="/delete-staff">
-                    <select name="staff_id" required>
-                        <option value="">ডিলিট করার জন্য স্টাফ সিলেক্ট করুন</option>
-                        {% for s in staff_list %}
-                        <option value="{{ s[0] }}">{{ s[1] }} ({{ s[4] }})</option>
-                        {% endfor %}
-                    </select><br>
-                    <input type="password" name="security_pin" placeholder="সিকিউরিটি পিন দিন (137955)" required><br>
-                    <button type="submit" class="btn-danger">Delete Staff Profile</button>
-                </form>
+                <!-- অন্যান্য সেটিংস ও অপশনগুলো আড়ালে বা এক সেটিংসে রাখা হলো -->
+                <details>
+                    <summary>⚙️ অন্যান্য সেটিংস ও এডমিন টুলস (এখানে ক্লিক করুন)</summary>
+                    <div style="margin-top: 10px;">
+                        <h4>কাজের কমেন্ট (Comment) সেট করুন</h4>
+                        <form method="POST" action="/update-preset-comment">
+                            <textarea name="preset_comment" rows="3" placeholder="স্টাফদের জন্য কমেন্ট লিখুন..." required>{{ preset_comment }}</textarea><br>
+                            <button type="submit" class="btn-warning">Update Default Comment</button>
+                        </form>
 
-                <hr>
-                <h4>মাসিক পেমেন্ট রেকর্ড যুক্ত করুন</h4>
-                <form method="POST" action="/add-payment">
-                    <select name="staff_name" required>
-                        <option value="">স্টাফ নির্বাচন করুন</option>
-                        {% for s in staff_list %}
-                        <option value="{{ s[1] }}">{{ s[1] }}</option>
-                        {% endfor %}
-                    </select><br>
-                    <input type="text" name="month_year" placeholder="মাস ও বছর (যেমন: August 2026)" required><br>
-                    <input type="number" step="0.01" name="amount" placeholder="পেমেন্ট এর পরিমাণ (টাকা)" required><br>
-                    <button type="submit">Save Payment</button>
-                </form>
+                        <hr>
+                        <h4>এডমিন যোগাযোগের তথ্য সেট করুন</h4>
+                        <form method="POST" action="/update-contact">
+                            <input type="text" name="admin_contact" value="{{ admin_contact }}" placeholder="যেমন: WhatsApp / Mobile: 01751947523" required><br>
+                            <button type="submit" class="btn-success">Update Contact Info</button>
+                        </form>
+
+                        <hr>
+                        <h4>স্টাফ ডিলিট করুন (সিকিউরিটি পিন প্রয়োজন)</h4>
+                        <form method="POST" action="/delete-staff">
+                            <select name="staff_id" required>
+                                <option value="">ডিলিট করার জন্য স্টাফ সিলেক্ট করুন</option>
+                                {% for s in staff_list %}
+                                <option value="{{ s[0] }}">{{ s[1] }} ({{ s[4] }})</option>
+                                {% endfor %}
+                            </select><br>
+                            <input type="password" name="security_pin" placeholder="সিকিউরিটি পিন দিন (137955)" required><br>
+                            <button type="submit" class="btn-danger">Delete Staff Profile</button>
+                        </form>
+
+                        <hr>
+                        <h4>মাসিক পেমেন্ট রেকর্ড যুক্ত করুন</h4>
+                        <form method="POST" action="/add-payment">
+                            <select name="staff_name" required>
+                                <option value="">স্টাফ নির্বাচন করুন</option>
+                                {% for s in staff_list %}
+                                <option value="{{ s[1] }}">{{ s[1] }}</option>
+                                {% endfor %}
+                            </select><br>
+                            <input type="text" name="month_year" placeholder="মাস ও বছর (যেমন: August 2026)" required><br>
+                            <input type="number" step="0.01" name="amount" placeholder="পেমেন্ট এর পরিমাণ (টাকা)" required><br>
+                            <button type="submit">Save Payment</button>
+                        </form>
+                    </div>
+                </details>
 
                 <hr>
                 <h4>জিমেইল অনুযায়ী কাজের জমা লিস্ট</h4>
@@ -399,9 +407,9 @@ def update_contact():
 def create_staff():
     if session.get('role') == 'admin':
         staff_user = request.form.get('staff_user')
-        staff_pass = request.form.get('staff_pass')
         gmail = request.form.get('gmail')
         gmail_pass = request.form.get('gmail_pass')
+        staff_pass = request.form.get('staff_pass')
         mobile = request.form.get('mobile')
         payment_method = request.form.get('payment_method')
         payment_number = request.form.get('payment_number')
@@ -426,7 +434,7 @@ def create_staff():
 
 @app.route('/delete-staff', methods=['POST'])
 def delete_staff():
-    if session.get('role') == 'admin':
+    if session.get('role'] == 'admin':
         staff_id = request.form.get('staff_id')
         entered_pin = request.form.get('security_pin')
         
@@ -443,7 +451,7 @@ def delete_staff():
 
 @app.route('/add-payment', methods=['POST'])
 def add_payment():
-    if session.get('role') == 'admin':
+    if session.get('role'] == 'admin':
         staff_name = request.form.get('staff_name')
         month_year = request.form.get('month_year')
         amount = request.form.get('amount')
@@ -490,6 +498,7 @@ def submit_gmail_work():
         flash('জিমেইলে কাজের হিসাব জমা হয়েছে!')
     return redirect('/')
 
+@app.route('/check-out', nested_methods=['POST']) # type: ignore
 @app.route('/check-out', methods=['POST'])
 def check_out():
     if 'user' in session:
