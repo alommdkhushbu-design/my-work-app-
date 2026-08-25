@@ -71,7 +71,7 @@ HTML_LAYOUT = """
         .btn-success { background: #28a745; }
         .btn-warning { background: #ffc107; color: black; }
         .stats-box { display: flex; gap: 10px; margin-bottom: 15px; }
-        .stat-card { background: #007bff; color: white; padding: 10px; border-radius: 6px; flex: 1; text-align: center; }
+        .stat-card { background: #28a745; color: white; padding: 15px; border-radius: 6px; flex: 1; text-align: center; font-size: 18px; }
         table { width: 100%; margin-top: 15px; border-collapse: collapse; font-size: 13px; display: block; overflow-x: auto; }
         th, td { border: 1px solid #ddd; padding: 8px; text-align: center; }
         th { background: #343a40; color: white; }
@@ -111,7 +111,7 @@ HTML_LAYOUT = """
             {% else %}
                 <h2 style="text-align: center;">Staff & Admin Login</h2>
                 <form method="POST" action="/login">
-                    <input type="text" name="username" placeholder="Enter Username / Staff ID" required><br>
+                    <input type="text" name="username" placeholder="Enter Username / Gmail / Staff ID" required><br>
                     <input type="password" name="password" placeholder="Enter Password" required><br>
                     <button type="submit">Login</button>
                 </form>
@@ -129,8 +129,7 @@ HTML_LAYOUT = """
             {% if session['role'] == 'admin' %}
                 <div class="stats-box">
                     <div class="stat-card">
-                        <h3>{{ total_staff }}</h3>
-                        <p>মোট স্টাফ</p>
+                        <h3>👥 মোট অ্যাকাউন্ট রেজিস্টার হয়েছে: {{ total_staff }} টি</h3>
                     </div>
                 </div>
 
@@ -222,10 +221,10 @@ HTML_LAYOUT = """
                 </table>
 
                 <hr>
-                <h4>💬 স্টাফদের সাথে লাইভ চ্যাট</h4>
+                <h4>💬 স্টাফদের মেসেজ ও লাইভ চ্যাট</h4>
                 <form method="GET" action="/">
                     <select name="chat_with" onchange="this.form.submit()">
-                        <option value="">চ্যাট করার জন্য স্টাফ সিলেক্ট করুন</option>
+                        <option value="">কার মেসেজ দেখতে চান? স্টাফ সিলেক্ট করুন</option>
                         {% for s in staff_list %}
                         <option value="{{ s[1] }}" {% if selected_chat_user == s[1] %}selected{% endif %}>{{ s[2] }} (ID: {{ s[1] }})</option>
                         {% endfor %}
@@ -243,7 +242,7 @@ HTML_LAYOUT = """
                     </div>
                     <form method="POST" action="/send-message">
                         <input type="hidden" name="receiver" value="{{ selected_chat_user }}">
-                        <input type="text" name="message" placeholder="মেসেজ লিখুন..." required autocomplete="off">
+                        <input type="text" name="message" placeholder="উত্তর বা মেসেজ লিখুন..." required autocomplete="off">
                         <button type="submit">Send Message</button>
                     </form>
                 {% endif %}
@@ -375,7 +374,6 @@ def register_action():
     mobile = request.form.get('mobile')
     password = request.form.get('password')
     
-    # অটো ইউজারনেম জেনারেট (যেমন: staff_xxxx)
     rand_num = random.randint(1000, 9999)
     username = f"staff_{rand_num}"
     
@@ -388,7 +386,6 @@ def register_action():
                   (username, staff_name, password, gmail, mobile))
         conn.commit()
         
-        # সিরিয়াল আইডি পাওয়ার জন্য আইডি চেক করা
         c.execute("SELECT id FROM users WHERE username=?", (username,))
         user_row = c.fetchone()
         serial_id = user_row[0] if user_row else ""
@@ -419,7 +416,7 @@ def login():
 
 @app.route('/update-preset-comment', methods=['POST'])
 def update_preset_comment():
-    if session.get('role') == 'admin':
+    if session.get('role'] == 'admin':
         comment = request.form.get('preset_comment')
         conn = get_db()
         c = conn.cursor()
@@ -431,7 +428,7 @@ def update_preset_comment():
 
 @app.route('/create-staff', methods=['POST'])
 def create_staff():
-    if session.get('role') == 'admin':
+    if session.get('role'] == 'admin':
         staff_user = request.form.get('staff_user')
         staff_name = request.form.get('staff_name')
         gmail = request.form.get('gmail')
@@ -461,7 +458,7 @@ def create_staff():
 
 @app.route('/delete-staff', methods=['POST'])
 def delete_staff():
-    if session.get('role') == 'admin':
+    if session.get('role'] == 'admin':
         staff_id = request.form.get('staff_id')
         entered_pin = request.form.get('security_pin')
         if entered_pin == SECURITY_PIN:
@@ -477,7 +474,7 @@ def delete_staff():
 
 @app.route('/add-payment', methods=['POST'])
 def add_payment():
-    if session.get('role') == 'admin':
+    if session.get('role'] == 'admin':
         staff_name = request.form.get('staff_name')
         month_year = request.form.get('month_year')
         amount = request.form.get('amount')
