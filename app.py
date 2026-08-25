@@ -416,7 +416,7 @@ def login():
 
 @app.route('/update-preset-comment', methods=['POST'])
 def update_preset_comment():
-    if session.get('role'] == 'admin':
+    if session.get('role') == 'admin':
         comment = request.form.get('preset_comment')
         conn = get_db()
         c = conn.cursor()
@@ -428,7 +428,7 @@ def update_preset_comment():
 
 @app.route('/create-staff', methods=['POST'])
 def create_staff():
-    if session.get('role'] == 'admin':
+    if session.get('role') == 'admin':
         staff_user = request.form.get('staff_user')
         staff_name = request.form.get('staff_name')
         gmail = request.form.get('gmail')
@@ -458,7 +458,7 @@ def create_staff():
 
 @app.route('/delete-staff', methods=['POST'])
 def delete_staff():
-    if session.get('role'] == 'admin':
+    if session.get('role') == 'admin':
         staff_id = request.form.get('staff_id')
         entered_pin = request.form.get('security_pin')
         if entered_pin == SECURITY_PIN:
@@ -474,7 +474,7 @@ def delete_staff():
 
 @app.route('/add-payment', methods=['POST'])
 def add_payment():
-    if session.get('role'] == 'admin':
+    if session.get('role') == 'admin':
         staff_name = request.form.get('staff_name')
         month_year = request.form.get('month_year')
         amount = request.form.get('amount')
