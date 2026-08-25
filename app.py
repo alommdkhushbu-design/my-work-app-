@@ -1,5 +1,6 @@
 import sqlite3
 import random
+import os
 from datetime import datetime
 from flask import Flask, render_template_string, request, session, redirect, url_for, flash
 
@@ -41,7 +42,10 @@ def init_db():
                  (id INTEGER PRIMARY KEY AUTOINCREMENT, preset_comment TEXT, admin_contact TEXT)''')
 
     c.execute('''CREATE TABLE IF NOT EXISTS chats 
-                 (id INTEGER PRIMARY KEY AUTOINCREMENT, sender TEXT, receiver TEXT, message TEXT, timestamp TEXT)''')
+                 (id INTEGER PRIMARY KEY AUTOINCREMENT, sender TEXT, receiver TEXT, message TEXT, image_url TEXT, timestamp TEXT)''')
+
+    c.execute('''CREATE TABLE IF NOT EXISTS assigned_tasks 
+                 (id INTEGER PRIMARY KEY AUTOINCREMENT, username TEXT, task_details TEXT, assigned_date TEXT, status TEXT)''')
     
     c.execute("SELECT * FROM users WHERE username='Khushbu23'")
     if not c.fetchone():
@@ -71,15 +75,16 @@ HTML_LAYOUT = """
         .btn-success { background: #28a745; }
         .btn-warning { background: #ffc107; color: black; }
         .stats-box { display: flex; gap: 10px; margin-bottom: 15px; }
-        .stat-card { background: #28a745; color: white; padding: 15px; border-radius: 6px; flex: 1; text-align: center; font-size: 18px; }
+        .stat-card { background: #28a745; color: white; padding: 15px; border-radius: 6px; flex: 1; text-align: center; font-size: 16px; }
         table { width: 100%; margin-top: 15px; border-collapse: collapse; font-size: 13px; display: block; overflow-x: auto; }
         th, td { border: 1px solid #ddd; padding: 8px; text-align: center; }
         th { background: #343a40; color: white; }
         .comment-box { background: #fff3cd; border: 1px solid #ffeeba; padding: 10px; border-radius: 5px; margin-bottom: 10px; }
-        .chat-box { background: #f1f1f1; border: 1px solid #ccc; padding: 10px; border-radius: 5px; height: 200px; overflow-y: scroll; margin-bottom: 10px; }
-        .chat-msg { margin: 5px 0; padding: 5px; border-radius: 4px; }
+        .chat-box { background: #f1f1f1; border: 1px solid #ccc; padding: 10px; border-radius: 5px; height: 220px; overflow-y: scroll; margin-bottom: 10px; }
+        .chat-msg { margin: 8px 0; padding: 8px; border-radius: 6px; background: white; border: 1px solid #ddd; }
         .msg-admin { background: #d4edda; text-align: left; }
         .msg-staff { background: #d1ecf1; text-align: right; }
+        .chat-img { max-width: 150px; border-radius: 5px; margin-top: 5px; display: block; }
         details { background: #f8f9fa; padding: 10px; border: 1px solid #ddd; border-radius: 5px; margin-top: 15px; }
         summary { font-weight: bold; cursor: pointer; color: #333; }
         .search-box { background: #e9ecef; padding: 10px; border-radius: 5px; margin-bottom: 15px; }
@@ -97,7 +102,7 @@ HTML_LAYOUT = """
 
         {% if not session.get('user') %}
             {% if request.path == '/register' %}
-                <h2 style="text-align: center;">নতুন স্টাফ অ্যাকাউন্ট রেজিস্টার করুন</h2>
+                <h2 style="text-align: center;">নতুন স্টাফ একাউন্ট রেজিস্টার করুন</h2>
                 <form method="POST" action="/register-action">
                     <input type="text" name="staff_name" placeholder="আপনার নাম (Staff Name)" required><br>
                     <input type="email" name="gmail" placeholder="জিমেইল এড্রেস (Gmail)" required><br>
@@ -129,49 +134,43 @@ HTML_LAYOUT = """
             {% if session['role'] == 'admin' %}
                 <div class="stats-box">
                     <div class="stat-card">
-                        <h3>👥 মোট অ্যাকাউন্ট রেজিস্টার হয়েছে: {{ total_staff }} টি</h3>
+                        <h3>👥 মোট একাউন্ট: {{ total_staff }} টি</h3>
                     </div>
                 </div>
 
-                <h3>নতুন স্টাফ অ্যাকাউন্ট তৈরি করুন (এডমিন প্যানেল)</h3>
-                <form method="POST" action="/create-staff">
-                    <input type="text" name="staff_user" placeholder="স্টাফ ইউজার আইডি (Login ID)" required><br>
-                    <input type="text" name="staff_name" placeholder="স্টাফ নাম (Staff Name)" required><br>
-                    <input type="email" name="gmail" placeholder="জিমেইল এড্রেস (Gmail)" required><br>
-                    <input type="text" name="gmail_pass" placeholder="জিমেইল পাসওয়ার্ড" required><br>
-                    <input type="text" name="staff_pass" placeholder="সাধারণ পাসওয়ার্ড (লগইনের জন্য)" required><br>
-                    <input type="text" name="mobile" placeholder="মোবাইল নম্বর" required><br>
-                    <select name="payment_method" required>
-                        <option value="bKash">বিকাশ (bKash)</option>
-                        <option value="Nagad">নগদ (Nagad)</option>
-                        <option value="Rocket">রকেট (Rocket)</option>
-                        <option value="Upay">উপায় (Upay)</option>
-                        <option value="Bank">ব্যাংক অ্যাকাউন্ট (Bank)</option>
+                <h3>স্টাফকে নির্দিষ্ট কাজ এসাইন (Assign Task) করুন</h3>
+                <form method="POST" action="/assign-task">
+                    <select name="staff_username" required>
+                        <option value="">কাজ দেওয়ার জন্য স্টাফ সিলেক্ট করুন</option>
+                        {% for s in staff_list %}
+                        <option value="{{ s[1] }}">{{ s[2] }} (ID: {{ s[1] }})</option>
+                        {% endfor %}
                     </select><br>
-                    <input type="text" name="payment_number" placeholder="পেমেন্ট নম্বর / অ্যাকাউন্ট নম্বর" required><br>
-                    <input type="password" name="security_pin" placeholder="সিকিউরিটি কোড দিন (137955)" required><br>
-                    <button type="submit" class="btn-success">Create Staff Account</button>
+                    <textarea name="task_details" rows="3" placeholder="কাজের বিবরণ ও নির্দেশনা লিখুন..." required></textarea><br>
+                    <button type="submit" class="btn-success">Send Task to Staff</button>
                 </form>
 
                 <details>
-                    <summary>⚙️ অন্যান্য সেটিংস ও এডমিন টুলস</summary>
+                    <summary>⚙️ নতুন স্টাফ একাউন্ট তৈরি ও অন্যান্য টুলস</summary>
                     <div style="margin-top: 10px;">
-                        <h4>কাজের কমেন্ট (Comment) সেট করুন</h4>
-                        <form method="POST" action="/update-preset-comment">
-                            <textarea name="preset_comment" rows="3" placeholder="স্টাফদের জন্য কমেন্ট লিখুন..." required>{{ preset_comment }}</textarea><br>
-                            <button type="submit" class="btn-warning">Update Default Comment</button>
-                        </form>
-                        <hr>
-                        <h4>স্টাফ ডিলিট করুন</h4>
-                        <form method="POST" action="/delete-staff">
-                            <select name="staff_id" required>
-                                <option value="">ডিলিট করার জন্য স্টাফ সিলেক্ট করুন</option>
-                                {% for s in staff_list %}
-                                <option value="{{ s[0] }}">{{ s[2] }} (ID: {{ s[1] }})</option>
-                                {% endfor %}
+                        <h4>নতুন স্টাফ একাউন্ট তৈরি করুন</h4>
+                        <form method="POST" action="/create-staff">
+                            <input type="text" name="staff_user" placeholder="স্টাফ ইউজার আইডি (Login ID)" required><br>
+                            <input type="text" name="staff_name" placeholder="স্টাফ নাম (Staff Name)" required><br>
+                            <input type="email" name="gmail" placeholder="জিমেইল এড্রেস (Gmail)" required><br>
+                            <input type="text" name="gmail_pass" placeholder="জিমেইল পাসওয়ার্ড" required><br>
+                            <input type="text" name="staff_pass" placeholder="সাধারণ পাসওয়ার্ড" required><br>
+                            <input type="text" name="mobile" placeholder="মোবাইল নম্বর" required><br>
+                            <select name="payment_method" required>
+                                <option value="bKash">বিকাশ (bKash)</option>
+                                <option value="Nagad">নগদ (Nagad)</option>
+                                <option value="Rocket">রকেট (Rocket)</option>
+                                <option value="Upay">উপায় (Upay)</option>
+                                <option value="Bank">ব্যাংক (Bank)</option>
                             </select><br>
-                            <input type="password" name="security_pin" placeholder="সিকিউরিটি পিন দিন (137955)" required><br>
-                            <button type="submit" class="btn-danger">Delete Staff Profile</button>
+                            <input type="text" name="payment_number" placeholder="পেমেন্ট নম্বর" required><br>
+                            <input type="password" name="security_pin" placeholder="সিকিউরিটি কোড (137955)" required><br>
+                            <button type="submit" class="btn-success">Create Profile</button>
                         </form>
                         <hr>
                         <h4>মাসিক পেমেন্ট রেকর্ড যুক্ত করুন</h4>
@@ -183,7 +182,7 @@ HTML_LAYOUT = """
                                 {% endfor %}
                             </select><br>
                             <input type="text" name="month_year" placeholder="মাস ও বছর (যেমন: August 2026)" required><br>
-                            <input type="number" step="0.01" name="amount" placeholder="পেমেন্ট এর পরিমাণ (টাকা)" required><br>
+                            <input type="number" step="0.01" name="amount" placeholder="টাকার পরিমাণ" required><br>
                             <button type="submit">Save Payment</button>
                         </form>
                     </div>
@@ -191,9 +190,9 @@ HTML_LAYOUT = """
 
                 <hr>
                 <div class="search-box">
-                    <h4>🔍 স্টাফ খুঁজুন (Search System)</h4>
+                    <h4>🔍 স্টাফ খুঁজুন</h4>
                     <form method="GET" action="/">
-                        <input type="text" name="search" value="{{ search_query }}" placeholder="স্টাফের নাম, আইডি, জিমেইল বা মোবাইল নম্বর দিয়ে সার্চ করুন..." style="width: 80%;">
+                        <input type="text" name="search" value="{{ search_query }}" placeholder="নাম, আইডি, জিমেইল বা মোবাইল দিয়ে খুঁজুন..." style="width: 80%;">
                         <button type="submit" style="width: 15%; display: inline-block; background: #17a2b8;">Search</button>
                     </form>
                 </div>
@@ -201,8 +200,8 @@ HTML_LAYOUT = """
                 <h4>স্টাফ প্রোফাইল ও পাসওয়ার্ড তালিকা</h4>
                 <table>
                     <tr>
-                        <th>Serial ID</th>
-                        <th>Username / ID</th>
+                        <th>Serial</th>
+                        <th>ID</th>
                         <th>Name</th>
                         <th>Password</th>
                         <th>Gmail</th>
@@ -221,7 +220,28 @@ HTML_LAYOUT = """
                 </table>
 
                 <hr>
-                <h4>💬 স্টাফদের মেসেজ ও লাইভ চ্যাট</h4>
+                <h4>📊 স্টাফদের প্রতিদিনের কাজের রিপোর্ট ও জিমেইল হিসাব</h4>
+                <table>
+                    <tr>
+                        <th>তারিখ (Date)</th>
+                        <th>স্টাফ আইডি</th>
+                        <th>ব্যবহৃত জিমেইল</th>
+                        <th>কাজের সংখ্যা</th>
+                        <th>কমেন্ট</th>
+                    </tr>
+                    {% for w in all_work_reports %}
+                    <tr>
+                        <td>{{ w[5] }}</td>
+                        <td><b>{{ w[1] }}</b></td>
+                        <td>{{ w[2] }}</td>
+                        <td><span style="background: #28a745; color: white; padding: 2px 6px; border-radius: 4px;">{{ w[3] }} টি</span></td>
+                        <td><small>{{ w[4] }}</small></td>
+                    </tr>
+                    {% endfor %}
+                </table>
+
+                <hr>
+                <h4>💬 স্টাফদের মেসেজ ও লাইভ চ্যাট (স্ক্রিনশটসহ)</h4>
                 <form method="GET" action="/">
                     <select name="chat_with" onchange="this.form.submit()">
                         <option value="">কার মেসেজ দেখতে চান? স্টাফ সিলেক্ট করুন</option>
@@ -235,20 +255,36 @@ HTML_LAYOUT = """
                     <div class="chat-box">
                         {% for msg in chat_messages %}
                             <div class="chat-msg {% if msg[1] == 'Khushbu23' %}msg-admin{% else %}msg-staff{% endif %}">
-                                <small><b>{{ msg[1] }}</b> ({{ msg[4] }}):</small><br>
+                                <small><b>{{ msg[1] }}</b> ({{ msg[5] }}):</small><br>
                                 <span>{{ msg[3] }}</span>
+                                {% if msg[4] %}
+                                    <a href="{{ msg[4] }}" target="_blank"><img src="{{ msg[4] }}" class="chat-img"></a>
+                                {% endif %}
                             </div>
                         {% endfor %}
                     </div>
-                    <form method="POST" action="/send-message">
+                    <form method="POST" action="/send-message" enctype="multipart/form-data">
                         <input type="hidden" name="receiver" value="{{ selected_chat_user }}">
-                        <input type="text" name="message" placeholder="উত্তর বা মেসেজ লিখুন..." required autocomplete="off">
-                        <button type="submit">Send Message</button>
+                        <input type="text" name="message" placeholder="উত্তর লিখুন..." autocomplete="off"><br>
+                        <input type="file" name="image" accept="image/*" style="padding: 3px;"><br>
+                        <button type="submit">Send Message & Screenshot</button>
                     </form>
                 {% endif %}
 
             {% else %}
                 <h4>স্টাফ প্যানেল</h4>
+                
+                {% if assigned_tasks %}
+                    <div style="background: #e8f4fd; border: 1px solid #b8daff; padding: 10px; border-radius: 5px; margin-bottom: 15px;">
+                        <h4 style="margin-top: 0; color: #004085;">📥 এডমিন কর্তৃক প্রদত্ত কাজসমূহ:</h4>
+                        <ul>
+                        {% for task in assigned_tasks %}
+                            <li><b>{{ task[2] }}</b> <small>({{ task[3] }})</small></li>
+                        {% endfor %}
+                        </ul>
+                    </div>
+                {% endif %}
+
                 {% if not today_log or not today_log[2] %}
                     <form method="POST" action="/check-in">
                         <button type="submit" class="btn-success">হাজিরা দিন (Check-In)</button>
@@ -262,12 +298,12 @@ HTML_LAYOUT = """
                         <button onclick="copyAndOpenGmail()" class="btn-warning" style="margin: 0;">কমেন্ট কপি করুন এবং জিমেইল খুলুন</button>
                     </div>
 
-                    <h4>কাজ জমা দিন</h4>
+                    <h4>প্রতিদিনের কাজের হিসাব জমা দিন (Work Submission)</h4>
                     <form method="POST" action="/submit-gmail-work">
                         <input type="email" name="gmail_used" placeholder="কোন জিমেইল থেকে কাজ করেছেন?" required><br>
                         <input type="number" name="work_count" placeholder="এই জিমেইলে কয়টি কাজ সম্পন্ন করেছেন?" required><br>
                         <input type="hidden" name="comment_used" value="{{ preset_comment }}">
-                        <button type="submit">Submit Work</button>
+                        <button type="submit" class="btn-success">Submit Daily Work Count</button>
                     </form>
                     <hr>
                     {% if not today_log[3] %}
@@ -281,18 +317,22 @@ HTML_LAYOUT = """
                 {% endif %}
 
                 <hr>
-                <h4>💬 এডমিনের সাথে সরাসরি কথা বলুন (চ্যাট)</h4>
+                <h4>💬 এডমিনের সাথে চ্যাট করুন ও স্ক্রিনশট জমা দিন</h4>
                 <div class="chat-box">
                     {% for msg in chat_messages %}
                         <div class="chat-msg {% if msg[1] == session['user'] %}msg-staff{% else %}msg-admin{% endif %}">
-                            <small><b>{{ msg[1] }}</b> ({{ msg[4] }}):</small><br>
+                            <small><b>{{ msg[1] }}</b> ({{ msg[5] }}):</small><br>
                             <span>{{ msg[3] }}</span>
+                            {% if msg[4] %}
+                                <a href="{{ msg[4] }}" target="_blank"><img src="{{ msg[4] }}" class="chat-img"></a>
+                            {% endif %}
                         </div>
                     {% endfor %}
                 </div>
-                <form method="POST" action="/send-message">
+                <form method="POST" action="/send-message" enctype="multipart/form-data">
                     <input type="hidden" name="receiver" value="Khushbu23">
-                    <input type="text" name="message" placeholder="এডমিনকে মেসেজ লিখুন..." required autocomplete="off">
+                    <input type="text" name="message" placeholder="মেসেজ লিখুন..." autocomplete="off"><br>
+                    <input type="file" name="image" accept="image/*" style="padding: 3px;"><br>
                     <button type="submit">Send to Admin</button>
                 </form>
 
@@ -334,6 +374,9 @@ def home():
             
             staff_list = c.fetchall()
             
+            c.execute("SELECT * FROM gmail_work ORDER BY id DESC")
+            all_work_reports = c.fetchall()
+            
             selected_chat_user = request.args.get('chat_with')
             chat_messages = []
             if selected_chat_user:
@@ -348,7 +391,7 @@ def home():
             return render_template_string(HTML_LAYOUT, staff_list=staff_list, 
                                          total_staff=total_staff, preset_comment=preset_comment, 
                                          admin_contact=admin_contact, selected_chat_user=selected_chat_user, 
-                                         chat_messages=chat_messages, search_query=search_query)
+                                         chat_messages=chat_messages, search_query=search_query, all_work_reports=all_work_reports)
         else:
             c.execute("SELECT * FROM attendance WHERE username=? AND date=?", (session['user'], today))
             today_log = c.fetchone()
@@ -356,10 +399,13 @@ def home():
             c.execute("SELECT * FROM chats WHERE (sender=? AND receiver=?) OR (sender=? AND receiver=?) ORDER BY id ASC", 
                       (session['user'], 'Khushbu23', 'Khushbu23', session['user']))
             chat_messages = c.fetchall()
+
+            c.execute("SELECT * FROM assigned_tasks WHERE username=? ORDER BY id DESC", (session['user'],))
+            assigned_tasks = c.fetchall()
             
             conn.close()
             return render_template_string(HTML_LAYOUT, today_log=today_log, preset_comment=preset_comment, 
-                                         admin_contact=admin_contact, chat_messages=chat_messages)
+                                         admin_contact=admin_contact, chat_messages=chat_messages, assigned_tasks=assigned_tasks)
             
     return render_template_string(HTML_LAYOUT)
 
@@ -391,7 +437,7 @@ def register_action():
         serial_id = user_row[0] if user_row else ""
         
         conn.close()
-        flash(f'একাউন্ট সফলভাবে তৈরি হয়েছে! আপনার ইউজার আইডি: {username} এবং সিরিয়াল নং: #{serial_id}')
+        flash(f'একাউন্ট সফলভাবে তৈরি হয়েছে! ইউজার আইডি: {username} এবং সিরিয়াল নং: #{serial_id}')
     except:
         flash('এই জিমেইল বা তথ্য দিয়ে ইতিমধ্যে একাউন্ট রয়েছে!')
     return redirect('/')
@@ -414,16 +460,20 @@ def login():
         flash('ভুল আইডি অথবা পাসওয়ার্ড!')
     return redirect('/')
 
-@app.route('/update-preset-comment', methods=['POST'])
-def update_preset_comment():
+@app.route('/assign-task', methods=['POST'])
+def assign_task():
     if session.get('role') == 'admin':
-        comment = request.form.get('preset_comment')
+        staff_username = request.form.get('staff_username')
+        task_details = request.form.get('task_details')
+        assigned_date = datetime.now().strftime('%Y-%m-%d %I:%M %p')
+        
         conn = get_db()
         c = conn.cursor()
-        c.execute("UPDATE system_config SET preset_comment=? WHERE id=1", (comment,))
+        c.execute("INSERT INTO assigned_tasks (username, task_details, assigned_date, status) VALUES (?, ?, ?, ?)", 
+                  (staff_username, task_details, assigned_date, 'Pending'))
         conn.commit()
         conn.close()
-        flash('ডিফল্ট কমেন্ট আপডেট করা হয়েছে!')
+        flash('স্টাফের আইডিতে কাজ সফলভাবে পাঠানো হয়েছে!')
     return redirect('/')
 
 @app.route('/create-staff', methods=['POST'])
@@ -449,27 +499,11 @@ def create_staff():
                           (staff_user, staff_name, staff_pass, gmail, gmail_pass, mobile, payment_method, payment_number))
                 conn.commit()
                 conn.close()
-                flash('স্টাফ অ্যাকাউন্ট সফলভাবে তৈরি ও সার্ভারে সেভ করা হয়েছে!')
+                flash('স্টাফ একাউন্ট সফলভাবে তৈরি করা হয়েছে!')
             except:
                 flash('এই ইউজার আইডিটি আগে থেকেই রয়েছে!')
         else:
             flash('ভুল সিকিউরিটি কোড!')
-    return redirect('/')
-
-@app.route('/delete-staff', methods=['POST'])
-def delete_staff():
-    if session.get('role') == 'admin':
-        staff_id = request.form.get('staff_id')
-        entered_pin = request.form.get('security_pin')
-        if entered_pin == SECURITY_PIN:
-            conn = get_db()
-            c = conn.cursor()
-            c.execute("DELETE FROM users WHERE id=?", (staff_id,))
-            conn.commit()
-            conn.close()
-            flash('স্টাফ প্রোফাইল ডিলিট করা হয়েছে!')
-        else:
-            flash('ভুল সিকিউরিটি পিন!')
     return redirect('/')
 
 @app.route('/add-payment', methods=['POST'])
@@ -499,7 +533,7 @@ def check_in():
         c.execute("INSERT INTO attendance (username, check_in, date) VALUES (?, ?, ?)", (session['user'], time_str, date_str))
         conn.commit()
         conn.close()
-        flash('হাজিরা দেওয়া সফল হয়েছে!')
+        flash('হাজিরা (Check-In) সফল হয়েছে!')
     return redirect('/')
 
 @app.route('/submit-gmail-work', methods=['POST'])
@@ -515,7 +549,7 @@ def submit_gmail_work():
                   (session['user'], gmail_used, work_count, comment_used, date_str))
         conn.commit()
         conn.close()
-        flash('কাজের হিসাব জমা হয়েছে!')
+        flash('প্রতিদিনের কাজের হিসাব সফলভাবে জমা হয়েছে!')
     return redirect('/')
 
 @app.route('/check-out', methods=['POST'])
@@ -529,7 +563,7 @@ def check_out():
         c.execute("UPDATE attendance SET check_out=? WHERE username=? AND date=?", (time_str, session['user'], today))
         conn.commit()
         conn.close()
-        flash('Check-Out সম্পন্ন হয়েছে!')
+        flash('কাজ শেষ করে বের হওয়া (Check-Out) সম্পন্ন হয়েছে!')
     return redirect('/')
 
 @app.route('/send-message', methods=['POST'])
@@ -537,14 +571,23 @@ def send_message():
     if 'user' in session:
         sender = session['user']
         receiver = request.form.get('receiver')
-        message = request.form.get('message')
+        message = request.form.get('message', '')
         timestamp = datetime.now().strftime('%I:%M %p, %d %b')
         
-        if message:
+        image_url = ""
+        file = request.files.get('image')
+        if file and file.filename != '':
+            upload_dir = 'static/uploads'
+            os.makedirs(upload_dir, exist_ok=True)
+            file_path = os.path.join(upload_dir, file.filename)
+            file.save(file_path)
+            image_url = f"/{file_path}"
+        
+        if message or image_url:
             conn = get_db()
             c = conn.cursor()
-            c.execute("INSERT INTO chats (sender, receiver, message, timestamp) VALUES (?, ?, ?, ?)", 
-                      (sender, receiver, message, timestamp))
+            c.execute("INSERT INTO chats (sender, receiver, message, image_url, timestamp) VALUES (?, ?, ?, ?, ?)", 
+                      (sender, receiver, message, image_url, timestamp))
             conn.commit()
             conn.close()
             
