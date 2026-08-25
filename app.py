@@ -122,7 +122,6 @@ HTML_LAYOUT = """
                 </form>
 
                 <hr>
-                <!-- অন্যান্য সেটিংস ও অপশনগুলো আড়ালে বা এক সেটিংসে রাখা হলো -->
                 <details>
                     <summary>⚙️ অন্যান্য সেটিংস ও এডমিন টুলস (এখানে ক্লিক করুন)</summary>
                     <div style="margin-top: 10px;">
@@ -434,7 +433,7 @@ def create_staff():
 
 @app.route('/delete-staff', methods=['POST'])
 def delete_staff():
-    if session.get('role'] == 'admin':
+    if session.get('role') == 'admin':
         staff_id = request.form.get('staff_id')
         entered_pin = request.form.get('security_pin')
         
@@ -498,7 +497,6 @@ def submit_gmail_work():
         flash('জিমেইলে কাজের হিসাব জমা হয়েছে!')
     return redirect('/')
 
-@app.route('/check-out', nested_methods=['POST']) # type: ignore
 @app.route('/check-out', methods=['POST'])
 def check_out():
     if 'user' in session:
