@@ -14,9 +14,12 @@ def get_db():
 def init_db():
     conn = get_db()
     c = conn.cursor()
+    
+    # users টেবিলে staff_name আলাদা করা হয়েছে
     c.execute('''CREATE TABLE IF NOT EXISTS users 
                  (id INTEGER PRIMARY KEY AUTOINCREMENT, 
                   username TEXT UNIQUE, 
+                  staff_name TEXT,
                   password TEXT, 
                   role TEXT,
                   gmail TEXT,
@@ -36,10 +39,14 @@ def init_db():
 
     c.execute('''CREATE TABLE IF NOT EXISTS system_config 
                  (id INTEGER PRIMARY KEY AUTOINCREMENT, preset_comment TEXT, admin_contact TEXT)''')
+
+    # লাইভ চ্যাটের টেবিল
+    c.execute('''CREATE TABLE IF NOT EXISTS chats 
+                 (id INTEGER PRIMARY KEY AUTOINCREMENT, sender TEXT, receiver TEXT, message TEXT, timestamp TEXT)''')
     
     c.execute("SELECT * FROM users WHERE username='Khushbu23'")
     if not c.fetchone():
-        c.execute("INSERT INTO users (username, password, role) VALUES ('Khushbu23', '01751947523', 'admin')")
+        c.execute("INSERT INTO users (username, staff_name, password, role) VALUES ('Khushbu23', 'Admin', '01751947523', 'admin')")
     
     c.execute("SELECT * FROM system_config")
     if not c.fetchone():
@@ -54,7 +61,7 @@ HTML_LAYOUT = """
 <!DOCTYPE html>
 <html>
 <head>
-    <title>Secure Staff & Task System</title>
+    <title>Staff & Task Management System</title>
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <style>
         body { font-family: Arial; margin: 15px; background: #eef2f3; }
@@ -70,7 +77,10 @@ HTML_LAYOUT = """
         th, td { border: 1px solid #ddd; padding: 8px; text-align: center; }
         th { background: #343a40; color: white; }
         .comment-box { background: #fff3cd; border: 1px solid #ffeeba; padding: 10px; border-radius: 5px; margin-bottom: 10px; }
-        .contact-box { background: #d1ecf1; border: 1px solid #bee5eb; padding: 10px; border-radius: 5px; margin-top: 15px; color: #0c5460; text-align: center; }
+        .chat-box { background: #f1f1f1; border: 1px solid #ccc; padding: 10px; border-radius: 5px; height: 200px; overflow-y: scroll; margin-bottom: 10px; }
+        .chat-msg { margin: 5px 0; padding: 5px; border-radius: 4px; }
+        .msg-admin { background: #d4edda; text-align: left; }
+        .msg-staff { background: #d1ecf1; text-align: right; }
         details { background: #f8f9fa; padding: 10px; border: 1px solid #ddd; border-radius: 5px; margin-top: 15px; }
         summary { font-weight: bold; cursor: pointer; color: #333; }
     </style>
@@ -86,7 +96,7 @@ HTML_LAYOUT = """
         {% if not session.get('user') %}
             <h2 style="text-align: center;">Staff & Admin Login</h2>
             <form method="POST" action="/login">
-                <input type="text" name="username" placeholder="Enter Username" required><br>
+                <input type="text" name="username" placeholder="Enter Username / Staff ID" required><br>
                 <input type="password" name="password" placeholder="Enter Password" required><br>
                 <button type="submit">Login</button>
             </form>
@@ -107,7 +117,8 @@ HTML_LAYOUT = """
 
                 <h3>নতুন স্টাফ অ্যাকাউন্ট তৈরি করুন</h3>
                 <form method="POST" action="/create-staff">
-                    <input type="text" name="staff_user" placeholder="স্টাফ আইডি / ইউজারনেম" required><br>
+                    <input type="text" name="staff_user" placeholder="স্টাফ ইউজার আইডি (Login ID)" required><br>
+                    <input type="text" name="staff_name" placeholder="স্টাফ নাম (Staff Name)" required><br>
                     <input type="email" name="gmail" placeholder="জিমেইল এড্রেস (Gmail)" required><br>
                     <input type="text" name="gmail_pass" placeholder="জিমেইল পাসওয়ার্ড" required><br>
                     <input type="text" name="staff_pass" placeholder="সাধারণ পাসওয়ার্ড (লগইনের জন্য)" required><br>
@@ -133,18 +144,12 @@ HTML_LAYOUT = """
                             <button type="submit" class="btn-warning">Update Default Comment</button>
                         </form>
                         <hr>
-                        <h4>এডমিন যোগাযোগের তথ্য সেট করুন</h4>
-                        <form method="POST" action="/update-contact">
-                            <input type="text" name="admin_contact" value="{{ admin_contact }}" placeholder="যেমন: WhatsApp / Mobile: 01751947523" required><br>
-                            <button type="submit" class="btn-success">Update Contact Info</button>
-                        </form>
-                        <hr>
                         <h4>স্টাফ ডিলিট করুন</h4>
                         <form method="POST" action="/delete-staff">
                             <select name="staff_id" required>
                                 <option value="">ডিলিট করার জন্য স্টাফ সিলেক্ট করুন</option>
                                 {% for s in staff_list %}
-                                <option value="{{ s[0] }}">{{ s[1] }} ({{ s[4] }})</option>
+                                <option value="{{ s[0] }}">{{ s[2] }} (ID: {{ s[1] }})</option>
                                 {% endfor %}
                             </select><br>
                             <input type="password" name="security_pin" placeholder="সিকিউরিটি পিন দিন (137955)" required><br>
@@ -156,7 +161,7 @@ HTML_LAYOUT = """
                             <select name="staff_name" required>
                                 <option value="">স্টাফ নির্বাচন করুন</option>
                                 {% for s in staff_list %}
-                                <option value="{{ s[1] }}">{{ s[1] }}</option>
+                                <option value="{{ s[2] }}">{{ s[2] }} (ID: {{ s[1] }})</option>
                                 {% endfor %}
                             </select><br>
                             <input type="text" name="month_year" placeholder="মাস ও বছর (যেমন: August 2026)" required><br>
@@ -170,24 +175,52 @@ HTML_LAYOUT = """
                 <h4>স্টাফ প্রোফাইল ও পাসওয়ার্ড তালিকা</h4>
                 <table>
                     <tr>
-                        <th>ID / User</th>
+                        <th>ID</th>
+                        <th>Name</th>
                         <th>Password</th>
                         <th>Gmail</th>
                         <th>Mobile</th>
-                        <th>Method</th>
-                        <th>Account</th>
+                        <th>Method & Number</th>
                     </tr>
                     {% for s in staff_list %}
                     <tr>
                         <td><b>{{ s[1] }}</b></td>
                         <td>{{ s[2] }}</td>
-                        <td>{{ s[4] }}</td>
-                        <td>{{ s[6] }}</td>
+                        <td>{{ s[3] }}</td>
+                        <td>{{ s[5] }}</td>
                         <td>{{ s[7] }}</td>
-                        <td>{{ s[8] }}</td>
+                        <td>{{ s[8] }}: {{ s[9] }}</td>
                     </tr>
                     {% endfor %}
                 </table>
+
+                <hr>
+                <h4>💬 স্টাফদের সাথে লাইভ চ্যাট</h4>
+                <form method="GET" action="/">
+                    <select name="chat_with" onchange="this.form.submit()">
+                        <option value="">চ্যাট করার জন্য স্টাফ সিলেক্ট করুন</option>
+                        {% for s in staff_list %}
+                        <option value="{{ s[1] }}" {% if selected_chat_user == s[1] %}selected{% endif %}>{{ s[2] }} (ID: {{ s[1] }})</option>
+                        {% endfor %}
+                    </select>
+                </form>
+
+                {% if selected_chat_user %}
+                    <div class="chat-box">
+                        {% for msg in chat_messages %}
+                            <div class="chat-msg {% if msg[1] == 'Khushbu23' %}msg-admin{% else %}msg-staff{% endif %}">
+                                <small><b>{{ msg[1] }}</b> ({{ msg[4] }}):</small><br>
+                                <span>{{ msg[3] }}</span>
+                            </div>
+                        {% endfor %}
+                    </div>
+                    <form method="POST" action="/send-message">
+                        <input type="hidden" name="receiver" value="{{ selected_chat_user }}">
+                        <input type="text" name="message" placeholder="মেসেজ লিখুন..." required autocomplete="off">
+                        <button type="submit">Send Message</button>
+                    </form>
+                {% endif %}
+
             {% else %}
                 <h4>স্টাফ প্যানেল</h4>
                 {% if not today_log or not today_log[2] %}
@@ -221,10 +254,21 @@ HTML_LAYOUT = """
                     {% endif %}
                 {% endif %}
 
-                <div class="contact-box">
-                    <p style="margin: 0;"><b>এডমিনের সাথে যোগাযোগের মাধ্যম:</b></p>
-                    <p style="margin: 5px 0; font-size: 15px;">{{ admin_contact }}</p>
+                <hr>
+                <h4>💬 এডমিনের সাথে সরাসরি কথা বলুন (চ্যাট)</h4>
+                <div class="chat-box">
+                    {% for msg in chat_messages %}
+                        <div class="chat-msg {% if msg[1] == session['user'] %}msg-staff{% else %}msg-admin{% endif %}">
+                            <small><b>{{ msg[1] }}</b> ({{ msg[4] }}):</small><br>
+                            <span>{{ msg[3] }}</span>
+                        </div>
+                    {% endfor %}
                 </div>
+                <form method="POST" action="/send-message">
+                    <input type="hidden" name="receiver" value="Khushbu23">
+                    <input type="text" name="message" placeholder="এডমিনকে মেসেজ লিখুন..." required autocomplete="off">
+                    <button type="submit">Send to Admin</button>
+                </form>
 
                 <script>
                 function copyAndOpenGmail() {
@@ -255,26 +299,34 @@ def home():
         admin_contact = config[1] if config else ""
         
         if session['role'] == 'admin':
-            c.execute("SELECT * FROM attendance ORDER BY id DESC")
-            logs = c.fetchall()
             c.execute("SELECT * FROM users WHERE role='staff'")
             staff_list = c.fetchall()
-            c.execute("SELECT * FROM gmail_work ORDER BY id DESC")
-            gmail_logs = c.fetchall()
-            c.execute("SELECT * FROM payments ORDER BY id DESC")
-            payment_logs = c.fetchall()
+            
+            selected_chat_user = request.args.get('chat_with')
+            chat_messages = []
+            if selected_chat_user:
+                c.execute("SELECT * FROM chats WHERE (sender=? AND receiver=?) OR (sender=? AND receiver=?) ORDER BY id ASC", 
+                          ('Khushbu23', selected_chat_user, selected_chat_user, 'Khushbu23'))
+                chat_messages = c.fetchall()
+                
             total_staff = len(staff_list)
             conn.close()
-            return render_template_string(HTML_LAYOUT, logs=logs, staff_list=staff_list, 
-                                         gmail_logs=gmail_logs, payment_logs=payment_logs, 
-                                         total_staff=total_staff, preset_comment=preset_comment, admin_contact=admin_contact)
+            return render_template_string(HTML_LAYOUT, staff_list=staff_list, 
+                                         total_staff=total_staff, preset_comment=preset_comment, 
+                                         admin_contact=admin_contact, selected_chat_user=selected_chat_user, 
+                                         chat_messages=chat_messages)
         else:
             c.execute("SELECT * FROM attendance WHERE username=? AND date=?", (session['user'], today))
             today_log = c.fetchone()
-            c.execute("SELECT * FROM payments WHERE username=? ORDER BY id DESC", (session['user'],))
-            my_payments = c.fetchall()
+            
+            # স্টাফের জন্য চ্যাট হিস্ট্রি
+            c.execute("SELECT * FROM chats WHERE (sender=? AND receiver=?) OR (sender=? AND receiver=?) ORDER BY id ASC", 
+                      (session['user'], 'Khushbu23', 'Khushbu23', session['user']))
+            chat_messages = c.fetchall()
+            
             conn.close()
-            return render_template_string(HTML_LAYOUT, today_log=today_log, my_payments=my_payments, preset_comment=preset_comment, admin_contact=admin_contact)
+            return render_template_string(HTML_LAYOUT, today_log=today_log, preset_comment=preset_comment, 
+                                         admin_contact=admin_contact, chat_messages=chat_messages)
             
     return render_template_string(HTML_LAYOUT)
 
@@ -289,8 +341,8 @@ def login():
     conn.close()
     
     if user:
-        session['user'] = user[1]
-        session['role'] = user[3]
+        session['user'] = user[1]  # username
+        session['role'] = user[4]  # role
         flash('লগইন সফল হয়েছে!')
     else:
         flash('ভুল আইডি অথবা পাসওয়ার্ড!')
@@ -308,22 +360,11 @@ def update_preset_comment():
         flash('ডিফল্ট কমেন্ট আপডেট করা হয়েছে!')
     return redirect('/')
 
-@app.route('/update-contact', methods=['POST'])
-def update_contact():
-    if session.get('role') == 'admin':
-        contact = request.form.get('admin_contact')
-        conn = get_db()
-        c = conn.cursor()
-        c.execute("UPDATE system_config SET admin_contact=? WHERE id=1", (contact,))
-        conn.commit()
-        conn.close()
-        flash('যোগাযোগের তথ্য আপডেট করা হয়েছে!')
-    return redirect('/')
-
 @app.route('/create-staff', methods=['POST'])
 def create_staff():
     if session.get('role') == 'admin':
         staff_user = request.form.get('staff_user')
+        staff_name = request.form.get('staff_name')
         gmail = request.form.get('gmail')
         gmail_pass = request.form.get('gmail_pass')
         staff_pass = request.form.get('staff_pass')
@@ -337,14 +378,14 @@ def create_staff():
                 conn = get_db()
                 c = conn.cursor()
                 c.execute("""INSERT INTO users 
-                             (username, password, role, gmail, gmail_pass, mobile, payment_method, payment_number) 
-                             VALUES (?, ?, 'staff', ?, ?, ?, ?, ?)""", 
-                          (staff_user, staff_pass, gmail, gmail_pass, mobile, payment_method, payment_number))
+                             (username, staff_name, password, role, gmail, gmail_pass, mobile, payment_method, payment_number) 
+                             VALUES (?, ?, ?, 'staff', ?, ?, ?, ?, ?)""", 
+                          (staff_user, staff_name, staff_pass, gmail, gmail_pass, mobile, payment_method, payment_number))
                 conn.commit()
                 conn.close()
                 flash('স্টাফ অ্যাকাউন্ট সফলভাবে তৈরি করা হয়েছে!')
             except:
-                flash('এই ইউজারনেমটি আগে থেকেই রয়েছে!')
+                flash('এই ইউজার আইডিটি আগে থেকেই রয়েছে!')
         else:
             flash('ভুল সিকিউরিটি কোড!')
     return redirect('/')
@@ -367,7 +408,7 @@ def delete_staff():
 
 @app.route('/add-payment', methods=['POST'])
 def add_payment():
-    if session.get('role') == 'admin':
+    if session.get('role'] == 'admin':
         staff_name = request.form.get('staff_name')
         month_year = request.form.get('month_year')
         amount = request.form.get('amount')
@@ -423,6 +464,26 @@ def check_out():
         conn.commit()
         conn.close()
         flash('Check-Out সম্পন্ন হয়েছে!')
+    return redirect('/')
+
+@app.route('/send-message', methods=['POST'])
+def send_message():
+    if 'user' in session:
+        sender = session['user']
+        receiver = request.form.get('receiver')
+        message = request.form.get('message')
+        timestamp = datetime.now().strftime('%I:%M %p, %d %b')
+        
+        if message:
+            conn = get_db()
+            c = conn.cursor()
+            c.execute("INSERT INTO chats (sender, receiver, message, timestamp) VALUES (?, ?, ?, ?)", 
+                      (sender, receiver, message, timestamp))
+            conn.commit()
+            conn.close()
+            
+        if session['role'] == 'admin':
+            return redirect(f'/?chat_with={receiver}')
     return redirect('/')
 
 @app.route('/logout')
