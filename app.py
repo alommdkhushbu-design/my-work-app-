@@ -31,7 +31,7 @@ def init_db():
                   payment_number TEXT)''')
     
     c.execute('''CREATE TABLE IF NOT EXISTS attendance 
-                 (id INTEGER PRIMARY KEY AUTOINCREMENT, username TEXT, check_in TEXT, check_out TEXT, date TEXT)''')
+                 (id INTEGER PRIMARY KEY AUTOINCREMENT, username TEXT, check_in TEXT, check_out TEXT, date TEXT, active_duration TEXT)''')
     
     c.execute('''CREATE TABLE IF NOT EXISTS gmail_work 
                  (id INTEGER PRIMARY KEY AUTOINCREMENT, username TEXT, gmail_used TEXT, work_count INTEGER, comment_used TEXT, date TEXT)''')
@@ -45,16 +45,12 @@ def init_db():
     c.execute('''CREATE TABLE IF NOT EXISTS system_config 
                  (id INTEGER PRIMARY KEY AUTOINCREMENT, preset_comment TEXT, admin_contact TEXT)''')
 
-    # Added is_read column for Message Notifications
     c.execute('''CREATE TABLE IF NOT EXISTS chats 
                  (id INTEGER PRIMARY KEY AUTOINCREMENT, sender TEXT, receiver TEXT, message TEXT, image_url TEXT, timestamp TEXT, is_read INTEGER DEFAULT 0)''')
 
     c.execute('''CREATE TABLE IF NOT EXISTS assigned_tasks 
                  (id INTEGER PRIMARY KEY AUTOINCREMENT, username TEXT, task_details TEXT, assigned_date TEXT, status TEXT, start_time TEXT, end_time TEXT)''')
                  
-    c.execute('''CREATE TABLE IF NOT EXISTS staff_notes 
-                 (id INTEGER PRIMARY KEY AUTOINCREMENT, username TEXT, note TEXT, date_posted TEXT)''')
-
     c.execute('''CREATE TABLE IF NOT EXISTS trash_bin 
                  (id INTEGER PRIMARY KEY AUTOINCREMENT, item_type TEXT, item_details TEXT, deleted_time TEXT)''')
     
@@ -87,7 +83,8 @@ HTML_LAYOUT = """
         .btn-warning { background: #ffc107; color: black; }
         .stats-box { display: flex; gap: 10px; margin-bottom: 15px; }
         .stat-card { background: #28a745; color: white; padding: 15px; border-radius: 6px; flex: 1; text-align: center; font-size: 16px; }
-        .notification-badge { background: #dc3545; color: white; padding: 2px 6px; border-radius: 10px; font-size: 11px; font-weight: bold; }
+        .stat-card-warning { background: #dc3545; color: white; padding: 15px; border-radius: 6px; flex: 1; text-align: center; font-size: 16px; }
+        .notification-badge { background: #dc3545; color: white; padding: 4px 8px; border-radius: 12px; font-size: 12px; font-weight: bold; text-decoration: none; display: inline-block; }
         table { width: 100%; margin-top: 15px; border-collapse: collapse; font-size: 13px; display: block; overflow-x: auto; }
         th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
         th { background: #343a40; color: white; text-align: center; }
@@ -149,7 +146,7 @@ HTML_LAYOUT = """
                 <h3>
                     {{ session['user'] }} ({{ session['role'] | upper }})
                     {% if session['role'] == 'admin' and total_unread_admin > 0 %}
-                        <span class="notification-badge">🔔 নতুন মেসেজ: {{ total_unread_admin }} টি</span>
+                        <a href="/?chat_with={{ first_unread_sender }}" class="notification-badge">🔔 নতুন মেসেজ এসেছে ({{ total_unread_admin }} টি) - ক্লিক করুন</a>
                     {% elif session['role'] == 'staff' and total_unread_staff > 0 %}
                         <span class="notification-badge">🔔 নতুন মেসেজ: {{ total_unread_staff }} টি</span>
                     {% endif %}
@@ -161,7 +158,10 @@ HTML_LAYOUT = """
             {% if session['role'] == 'admin' %}
                 <div class="stats-box">
                     <div class="stat-card">
-                        <h3>👥 মোট রেজিস্টার্ড একাউন্ট: {{ total_staff }} টি</h3>
+                        <h3>🟢 রেগুলার কাজ করেছে: {{ regular_staff_list|length }} জন</h3>
+                    </div>
+                    <div class="stat-card-warning">
+                        <h3>🔴 কাজ জমা দেয়নি: {{ irregular_staff_list|length }} জন</h3>
                     </div>
                 </div>
 
@@ -170,14 +170,14 @@ HTML_LAYOUT = """
                     <select name="staff_username" required>
                         <option value="">কাজ দেওয়ার জন্য স্টাফ সিলেক্ট করুন</option>
                         <optgroup label="🟢 রেজিস্টার্ড অ্যাকাউন্টসমূহ">
-                            {% for s in staff_list %}
+                            {% for s in all_staff_raw %}
                                 {% if s[5] == 'Registered' %}
                                 <option value="{{ s[1] }}">{{ s[2] }} (ID: {{ s[1] }})</option>
                                 {% endif %}
                             {% endfor %}
                         </optgroup>
                         <optgroup label="🔵 অ্যাডমিনের পার্সোনাল সেভ করা আইডি">
-                            {% for s in staff_list %}
+                            {% for s in all_staff_raw %}
                                 {% if s[5] == 'Extra' %}
                                 <option value="{{ s[1] }}">{{ s[2] }} (ID: {{ s[1] }})</option>
                                 {% endif %}
@@ -195,7 +195,7 @@ HTML_LAYOUT = """
                         <form method="POST" action="/create-staff">
                             <input list="registered_users_list" name="staff_user" placeholder="স্টাফ ইউজার আইডি" autocomplete="off" required><br>
                             <datalist id="registered_users_list">
-                                {% for s in staff_list %}
+                                {% for s in all_staff_raw %}
                                     {% if s[5] == 'Registered' %}
                                     <option value="{{ s[1] }}">{{ s[2] }}</option>
                                     {% endif %}
@@ -223,7 +223,7 @@ HTML_LAYOUT = """
                         <form method="POST" action="/add-payment">
                             <select name="staff_name" required>
                                 <option value="">স্টাফ নির্বাচন করুন</option>
-                                {% for s in staff_list %}
+                                {% for s in all_staff_raw %}
                                 <option value="{{ s[1] }}">{{ s[2] }} (ID: {{ s[1] }})</option>
                                 {% endfor %}
                             </select><br>
@@ -301,33 +301,100 @@ HTML_LAYOUT = """
                     </form>
                 </div>
 
-                <h4>স্টাফ প্রোফাইল, পাসওয়ার্ড ও ডিউটি ডিটেলস চেক করুন</h4>
+                <!-- SECTION 1: REGULAR STAFF WHO SUBMITTED WORK TODAY -->
+                <h4 style="color: #28a745; margin-top: 20px;">🟢 ১. আজকের রেগুলার স্টাফ (যাঁরা আজ কাজ জমা দিয়েছেন)</h4>
                 <table>
                     <tr>
                         <th style="text-align:center;">ID</th>
                         <th style="text-align:center;">Name</th>
-                        <th style="text-align:center;">Gmail & Password</th>
+                        <th style="text-align:center;">Gmail & Pass</th>
+                        <th style="text-align:center;">Active Status / Duration</th>
+                        <th style="text-align:center;">Payment Info</th>
+                        <th style="text-align:center;">Action (পিন দিয়ে ডিলিট)</th>
+                    </tr>
+                    {% if regular_staff_list %}
+                        {% for s in regular_staff_list %}
+                        <tr style="text-align:center;">
+                            <td><b>{{ s[1] }}</b></td>
+                            <td><a href="/?view_details={{ s[1] }}" style="color: #007bff; font-weight: bold; text-decoration: underline;">{{ s[2] }}</a></td>
+                            <td>{{ s[6] }}<br><b style="color: red;">Pass: {{ s[3] }}</b></td>
+                            <td><span style="color: green; font-weight: bold;">অ্যাক্টিভ ছিলেন:</span><br>{{ s[11] if s[11] else 'চলমান / হিসাব নেই' }}</td>
+                            <td>{{ s[9] }} - {{ s[10] }}</td>
+                            <td>
+                                <form method="POST" action="/delete-staff" style="margin:0;">
+                                    <input type="hidden" name="username" value="{{ s[1] }}">
+                                    <input type="password" name="security_pin" placeholder="পিন (137955)" style="width: 85px; padding: 3px;" required>
+                                    <button type="submit" class="btn-danger" style="padding: 4px 6px; font-size: 11px; width: auto;">Delete</button>
+                                </form>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    {% else %}
+                        <tr><td colspan="6" style="text-align: center; color: gray;">আজ এখনো কেউ কাজ জমা দেয়নি।</td></tr>
+                    {% endif %}
+                </table>
+
+                <!-- SECTION 2: IRREGULAR STAFF WHO DID NOT SUBMIT WORK TODAY -->
+                <h4 style="color: #dc3545; margin-top: 25px;">🔴 ২. আজকের ইরেগুলার স্টাফ (যাঁরা আজ কাজ জমা দেননি)</h4>
+                <table>
+                    <tr>
+                        <th style="text-align:center;">ID</th>
+                        <th style="text-align:center;">Name</th>
+                        <th style="text-align:center;">Gmail & Pass</th>
                         <th style="text-align:center;">Mobile</th>
                         <th style="text-align:center;">Payment Info</th>
-                        <th style="text-align:center;">Action (পাসওয়ার্ড দিন)</th>
+                        <th style="text-align:center;">Action (পিন দিয়ে ডিলিট)</th>
                     </tr>
-                    {% for s in staff_list %}
-                    <tr style="text-align:center;">
-                        <td><b>{{ s[1] }}</b></td>
-                        <td><a href="/?view_details={{ s[1] }}" style="color: #007bff; font-weight: bold; text-decoration: underline;">{{ s[2] }}</a></td>
-                        <td>{{ s[6] }}<br><b style="color: red;">Pass: {{ s[3] }}</b></td>
-                        <td>{{ s[8] }}</td>
-                        <td>{{ s[9] }} - {{ s[10] }}</td>
-                        <td>
-                            <form method="POST" action="/delete-staff" style="margin:0;">
-                                <input type="hidden" name="username" value="{{ s[1] }}">
-                                <input type="password" name="security_pin" placeholder="পিন (137955)" style="width: 85px; padding: 3px;" required>
-                                <button type="submit" class="btn-danger" style="padding: 4px 6px; font-size: 11px; width: auto;">Delete</button>
-                            </form>
-                        </td>
-                    </tr>
-                    {% endfor %}
+                    {% if irregular_staff_list %}
+                        {% for s in irregular_staff_list %}
+                        <tr style="text-align:center;">
+                            <td><b>{{ s[1] }}</b></td>
+                            <td><a href="/?view_details={{ s[1] }}" style="color: #007bff; font-weight: bold; text-decoration: underline;">{{ s[2] }}</a></td>
+                            <td>{{ s[6] }}<br><b style="color: red;">Pass: {{ s[3] }}</b></td>
+                            <td>{{ s[8] }}</td>
+                            <td>{{ s[9] }} - {{ s[10] }}</td>
+                            <td>
+                                <form method="POST" action="/delete-staff" style="margin:0;">
+                                    <input type="hidden" name="username" value="{{ s[1] }}">
+                                    <input type="password" name="security_pin" placeholder="পিন (137955)" style="width: 85px; padding: 3px;" required>
+                                    <button type="submit" class="btn-danger" style="padding: 4px 6px; font-size: 11px; width: auto;">Delete</button>
+                                </form>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    {% else %}
+                        <tr><td colspan="6" style="text-align: center; color: gray;">সবাই আজ কাজ জমা দিয়েছে! কোনো ইরেগুলার স্টাফ নেই।</td></tr>
+                    {% endif %}
                 </table>
+
+                <!-- ALL PAYMENTS RECORD SECTION WITH EDIT OPTION -->
+                <hr>
+                <h4>💳 পেমেন্ট রেকর্ডসমূহ (এডিট বা আপডেট করুন)</h4>
+                {% if all_payments %}
+                    <table>
+                        <tr>
+                            <th>স্টাফ আইডি</th>
+                            <th>মাস ও বছর</th>
+                            <th>টাকা</th>
+                            <th>মাধ্যম ও নম্বর</th>
+                            <th>এডিট পেমেন্ট</th>
+                        </tr>
+                        {% for p in all_payments %}
+                        <tr>
+                            <form method="POST" action="/update-payment">
+                                <input type="hidden" name="pay_id" value="{{ p[0] }}">
+                                <td><b>{{ p[1] }}</b></td>
+                                <td><input type="text" name="month_year" value="{{ p[2] }}" style="width: 110px;"></td>
+                                <td><input type="number" step="0.01" name="amount" value="{{ p[3] }}" style="width: 70px;"></td>
+                                <td>{{ p[4] }} - <input type="text" name="payment_number" value="{{ p[5] }}" style="width: 100px;"></td>
+                                <td><button type="submit" class="btn-warning" style="padding: 3px 8px; width: auto; font-size: 11px;">Update</button></td>
+                            </form>
+                        </tr>
+                        {% endfor %}
+                    </table>
+                {% else %}
+                    <p style="color: gray;">কোনো পেমেন্ট হিস্ট্রি নেই।</p>
+                {% endif %}
 
                 {% if detail_staff %}
                     <div style="background: #e2e3e5; padding: 15px; margin-top: 15px; border-radius: 5px; border: 1px solid #ccc;">
@@ -335,11 +402,11 @@ HTML_LAYOUT = """
                         <p><b>জিমেইল:</b> {{ detail_staff[6] }} | <b>মোবাইল:</b> {{ detail_staff[8] }}</p>
                         <p><b>পেমেন্ট মাধ্যম:</b> {{ detail_staff[9] }} (নম্বর: {{ detail_staff[10] }})</p>
                         
-                        <h5>হাজিরা ও ডিউটি রেকর্ড:</h5>
+                        <h5>হাজিরা ও অ্যাক্টিভ থাকার সময় (Active Duration):</h5>
                         {% if staff_attendance_logs %}
                             <ul>
                             {% for att in staff_attendance_logs %}
-                                <li>তারিখ: {{ att[4] }} | Check-In: {{ att[2] }} | Check-Out: {{ att[3] if att[3] else 'চলমান' }}</li>
+                                <li>তারিখ: {{ att[4] }} | Check-In: {{ att[2] }} | Check-Out: {{ att[3] if att[3] else 'চলমান' }} | <b style="color:green;">অ্যাক্টিভ ছিলেন: {{ att[5] if att[5] else 'হিসাব নেই' }}</b></li>
                             {% endfor %}
                             </ul>
                         {% else %}
@@ -365,7 +432,7 @@ HTML_LAYOUT = """
                 <form method="GET" action="/">
                     <select name="chat_with" onchange="this.form.submit()">
                         <option value="">স্টাফ সিলেক্ট করুন</option>
-                        {% for s in staff_list %}
+                        {% for s in all_staff_raw %}
                             {% set unread_count = unread_dict.get(s[1], 0) %}
                             <option value="{{ s[1] }}" {% if selected_chat_user == s[1] %}selected{% endif %}>
                                 {{ s[2] }} (ID: {{ s[1] }}) {% if unread_count > 0 %} ⭐ [ নতুন মেসেজ: {{ unread_count }} টি ]{% endif %}
@@ -479,7 +546,7 @@ HTML_LAYOUT = """
                                     <button type="submit" class="btn-danger">Check-Out</button>
                                 </form>
                             {% else %}
-                                <p style="color: green;"><b>আজকের কাজ সম্পন্ন হয়েছে!</b></p>
+                                <p style="color: green;"><b>আজকের কাজ ও চেক-আউট সম্পন্ন হয়েছে!</b></p>
                             {% endif %}
                         {% endif %}
                     </div>
@@ -517,7 +584,6 @@ HTML_LAYOUT = """
             {% endif %}
 
             <script>
-                // Auto scroll chat to bottom
                 window.onload = function() {
                     var cb = document.getElementById("chatBox");
                     if (cb) {
@@ -550,28 +616,56 @@ def home():
                 c.execute("SELECT * FROM users WHERE role='staff' AND (username LIKE ? OR staff_name LIKE ? OR gmail LIKE ? OR mobile LIKE ?)", (q, q, q, q))
             else:
                 c.execute("SELECT * FROM users WHERE role='staff'")
-            staff_list = c.fetchall()
+            all_staff_raw = c.fetchall()
+            
+            # Separate regular (who submitted work today) and irregular staff
+            c.execute("SELECT DISTINCT username FROM gmail_work WHERE date=?", (today,))
+            submitted_usernames = [row[0] for row in c.fetchall()]
+            
+            regular_staff_list = []
+            irregular_staff_list = []
+            
+            for s in all_staff_raw:
+                username = s[1]
+                # Get today's active duration if any
+                c.execute("SELECT active_duration FROM attendance WHERE username=? AND date=?", (username, today))
+                att_row = c.fetchone()
+                duration = att_row[0] if att_row and att_row[0] else "হিসাব নেই"
+                
+                # Append active duration as a temporary field in tuple index 11
+                s_extended = list(s) + [duration]
+                
+                if username in submitted_usernames:
+                    regular_staff_list.append(s_extended)
+                else:
+                    irregular_staff_list.append(s_extended)
             
             c.execute("SELECT * FROM personal_payment_notes WHERE username='Khushbu23' ORDER BY id DESC")
             admin_docs = c.fetchall()
 
             c.execute("SELECT * FROM trash_bin ORDER BY id DESC")
             trash_items = c.fetchall()
+
+            c.execute("SELECT * FROM payments ORDER BY id DESC")
+            all_payments = c.fetchall()
             
-            # Count unread messages per staff for admin
             unread_dict = {}
-            for s in staff_list:
+            first_unread_sender = ""
+            for s in all_staff_raw:
                 c.execute("SELECT COUNT(*) FROM chats WHERE sender=? AND receiver='Khushbu23' AND is_read=0", (s[1],))
                 cnt = c.fetchone()[0]
                 unread_dict[s[1]] = cnt
+                if cnt > 0 and not first_unread_sender:
+                    first_unread_sender = s[1]
 
             c.execute("SELECT COUNT(*) FROM chats WHERE receiver='Khushbu23' AND is_read=0")
             total_unread_admin = c.fetchone()[0]
+            if not first_unread_sender and all_staff_raw:
+                first_unread_sender = all_staff_raw[0][1]
             
             selected_chat_user = request.args.get('chat_with')
             chat_messages = []
             if selected_chat_user:
-                # Mark messages as read when opening chat
                 c.execute("UPDATE chats SET is_read=1 WHERE sender=? AND receiver='Khushbu23'", (selected_chat_user,))
                 conn.commit()
 
@@ -579,9 +673,6 @@ def home():
                           ('Khushbu23', selected_chat_user, selected_chat_user, 'Khushbu23'))
                 chat_messages = c.fetchall()
                 
-            c.execute("SELECT COUNT(*) FROM users WHERE role='staff'")
-            total_staff = c.fetchone()[0]
-            
             view_staff_id = request.args.get('view_details')
             detail_staff = None
             staff_attendance_logs = []
@@ -595,19 +686,21 @@ def home():
                 staff_work_logs = c.fetchall()
 
             conn.close()
-            return render_template_string(HTML_LAYOUT, staff_list=staff_list, 
-                                         total_staff=total_staff, preset_comment=preset_comment, 
+            return render_template_string(HTML_LAYOUT, all_staff_raw=all_staff_raw, 
+                                         regular_staff_list=regular_staff_list,
+                                         irregular_staff_list=irregular_staff_list,
+                                         preset_comment=preset_comment, 
                                          admin_contact=admin_contact, selected_chat_user=selected_chat_user, 
                                          chat_messages=chat_messages, search_query=search_query, 
                                          admin_docs=admin_docs, trash_items=trash_items,
                                          detail_staff=detail_staff, staff_attendance_logs=staff_attendance_logs,
                                          staff_work_logs=staff_work_logs, unread_dict=unread_dict,
-                                         total_unread_admin=total_unread_admin)
+                                         total_unread_admin=total_unread_admin, first_unread_sender=first_unread_sender,
+                                         all_payments=all_payments)
         else:
             c.execute("SELECT * FROM attendance WHERE username=? AND date=?", (session['user'], today))
             today_log = c.fetchone()
             
-            # Mark messages as read for staff when viewing chat
             c.execute("UPDATE chats SET is_read=1 WHERE sender='Khushbu23' AND receiver=?", (session['user'],))
             conn.commit()
 
@@ -833,6 +926,22 @@ def add_payment():
         flash('পেমেন্ট হিস্ট্রি যুক্ত করা হয়েছে!')
     return redirect('/')
 
+@app.route('/update-payment', methods=['POST'])
+def update_payment():
+    if session.get('role') == 'admin':
+        pay_id = request.form.get('pay_id')
+        month_year = request.form.get('month_year')
+        amount = request.form.get('amount')
+        payment_number = request.form.get('payment_number')
+        
+        conn = get_db()
+        c = conn.cursor()
+        c.execute("UPDATE payments SET month_year=?, amount=?, payment_number=? WHERE id=?", (month_year, amount, payment_number, pay_id))
+        conn.commit()
+        conn.close()
+        flash('পেমেন্ট রেকর্ড আপডেট করা হয়েছে!')
+    return redirect('/')
+
 @app.route('/assign-task', methods=['POST'])
 def assign_task():
     if session.get('role') == 'admin':
@@ -923,9 +1032,26 @@ def check_out():
         now = datetime.now()
         time_str = now.strftime('%I:%M %p')
         today = datetime.now().strftime('%Y-%m-%d')
+        
         conn = get_db()
         c = conn.cursor()
-        c.execute("UPDATE attendance SET check_out=? WHERE username=? AND date=?", (time_str, session['user'], today))
+        c.execute("SELECT check_in FROM attendance WHERE username=? AND date=?", (session['user'], today))
+        row = c.fetchone()
+        if row and row[0]:
+            check_in_time_str = row[0]
+            try:
+                t1 = datetime.strptime(check_in_time_str, '%I:%M %p')
+                t2 = datetime.strptime(time_str, '%I:%M %p')
+                diff = t2 - t1
+                hours = int(diff.seconds // 3600)
+                minutes = int((diff.seconds % 3600) // 60)
+                duration_str = f"{hours} ঘন্টা {minutes} মিনিট"
+            except:
+                duration_str = "হিসাব করা যায়নি"
+        else:
+            duration_str = "অজানা"
+
+        c.execute("UPDATE attendance SET check_out=?, active_duration=? WHERE username=? AND date=?", (time_str, duration_str, session['user'], today))
         conn.commit()
         conn.close()
         flash('Check-Out সম্পন্ন!')
@@ -951,7 +1077,6 @@ def send_message():
         if message or image_url:
             conn = get_db()
             c = conn.cursor()
-            # is_read is 0 by default for unread notification
             c.execute("INSERT INTO chats (sender, receiver, message, image_url, timestamp, is_read) VALUES (?, ?, ?, ?, ?, 0)", 
                       (sender, receiver, message, image_url, timestamp))
             conn.commit()
