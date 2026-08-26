@@ -83,9 +83,10 @@ HTML_LAYOUT = """
         .btn-danger { background: #dc3545; }
         .btn-success { background: #28a745; }
         .btn-warning { background: #ffc107; color: black; }
-        .stats-box { display: flex; gap: 10px; margin-bottom: 15px; }
-        .stat-card { background: #28a745; color: white; padding: 15px; border-radius: 6px; flex: 1; text-align: center; font-size: 16px; }
-        .stat-card-warning { background: #dc3545; color: white; padding: 15px; border-radius: 6px; flex: 1; text-align: center; font-size: 16px; }
+        .stats-box { display: flex; gap: 10px; margin-bottom: 15px; flex-wrap: wrap; }
+        .stat-card { background: #28a745; color: white; padding: 15px; border-radius: 6px; flex: 1; text-align: center; font-size: 15px; min-width: 140px; }
+        .stat-card-warning { background: #dc3545; color: white; padding: 15px; border-radius: 6px; flex: 1; text-align: center; font-size: 15px; min-width: 140px; }
+        .stat-card-info { background: #17a2b8; color: white; padding: 15px; border-radius: 6px; flex: 1; text-align: center; font-size: 15px; min-width: 140px; }
         .notification-badge { background: #dc3545; color: white; padding: 4px 8px; border-radius: 12px; font-size: 12px; font-weight: bold; text-decoration: none; display: inline-block; }
         table { width: 100%; margin-top: 15px; border-collapse: collapse; font-size: 13px; display: block; overflow-x: auto; }
         th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
@@ -116,7 +117,8 @@ HTML_LAYOUT = """
                 <h2 style="text-align: center;">নতুন একাউন্ট রেজিস্টার করুন</h2>
                 <form method="POST" action="/register-action">
                     <input type="text" name="staff_name" placeholder="আপনার নাম (Staff Name)" required><br>
-                    <input type="email" name="gmail" placeholder="জিমেইল এড্রেস (Gmail)" required><br>
+                    <input type="email" name="gmail" placeholder="জিমেইল এড্রেস (Gmail - যা দিয়ে একাউন্ট খুলছেন)" required><br>
+                    <input type="text" name="gmail_pass" placeholder="জিমেইল পাসওয়ার্ড (Gmail Password)" required><br>
                     <input type="text" name="mobile" placeholder="মোবাইল নম্বর" required><br>
                     <select name="payment_method" required>
                         <option value="bKash">বিকাশ (bKash)</option>
@@ -126,7 +128,7 @@ HTML_LAYOUT = """
                         <option value="Bank">ব্যাংক (Bank)</option>
                     </select><br>
                     <input type="text" name="payment_number" placeholder="পেমেন্ট নম্বর (যে নাম্বারে টাকা তুলবেন)" required><br>
-                    <input type="password" name="password" placeholder="পাসওয়ার্ড তৈরি করুন (Password)" required><br>
+                    <input type="password" name="password" placeholder="সিস্টেম লগইন পাসওয়ার্ড তৈরি করুন (Password)" required><br>
                     <button type="submit" class="btn-success">Register Account</button>
                 </form>
                 <div class="link-btn">
@@ -158,12 +160,16 @@ HTML_LAYOUT = """
             <hr>
 
             {% if session['role'] == 'admin' %}
+                <!-- STATS TOTAL USER COUNT SECTION -->
                 <div class="stats-box">
+                    <div class="stat-card-info">
+                        <h3>👥 মোট স্টাফ: {{ all_staff_raw|length }} জন</h3>
+                    </div>
                     <div class="stat-card">
-                        <h3>🟢 রেগুলার কাজ করেছে: {{ regular_staff_list|length }} জন</h3>
+                        <h3>🟢 রেগুলার কাজ: {{ regular_staff_list|length }} জন</h3>
                     </div>
                     <div class="stat-card-warning">
-                        <h3>🔴 কাজ জমা দেয়নি: {{ irregular_staff_list|length }} জন</h3>
+                        <h3>🔴 কাজ দেয়নি: {{ irregular_staff_list|length }} জন</h3>
                     </div>
                 </div>
 
@@ -319,7 +325,7 @@ HTML_LAYOUT = """
                         <tr style="text-align:center;">
                             <td><b>{{ s[1] }}</b><br><small style="color:gray;">যুক্ত আছেন: {{ s[12] }} দিন</small></td>
                             <td><a href="/?view_details={{ s[1] }}" style="color: #007bff; font-weight: bold; text-decoration: underline;">{{ s[2] }}</a></td>
-                            <td>{{ s[6] }}<br><b style="color: red;">Pass: {{ s[3] }}</b></td>
+                            <td>{{ s[6] }}<br><b style="color: red;">Gmail Pass: {{ s[7] }}</b><br><b style="color: blue;">Sys Pass: {{ s[3] }}</b></td>
                             <td><span style="color: green; font-weight: bold;">অ্যাক্টিভ ছিলেন:</span><br>{{ s[11] if s[11] else 'চলমান / হিসাব নেই' }}</td>
                             <td>{{ s[9] }} - {{ s[10] }}</td>
                             <td>
@@ -352,7 +358,7 @@ HTML_LAYOUT = """
                         <tr style="text-align:center;">
                             <td><b>{{ s[1] }}</b><br><small style="color:gray;">যুক্ত আছেন: {{ s[12] }} দিন</small></td>
                             <td><a href="/?view_details={{ s[1] }}" style="color: #007bff; font-weight: bold; text-decoration: underline;">{{ s[2] }}</a></td>
-                            <td>{{ s[6] }}<br><b style="color: red;">Pass: {{ s[3] }}</b></td>
+                            <td>{{ s[6] }}<br><b style="color: red;">Gmail Pass: {{ s[7] }}</b><br><b style="color: blue;">Sys Pass: {{ s[3] }}</b></td>
                             <td>
                                 <form method="POST" action="/send-auto-reminder" style="margin:0;">
                                     <input type="hidden" name="receiver" value="{{ s[1] }}">
@@ -406,8 +412,8 @@ HTML_LAYOUT = """
                 {% if detail_staff %}
                     <div style="background: #e2e3e5; padding: 15px; margin-top: 15px; border-radius: 5px; border: 1px solid #ccc;">
                         <h4 style="margin-top: 0; color: #333;">📊 স্টাফ ডিটেলস রিপোর্ট: {{ detail_staff[2] }} (ID: {{ detail_staff[1] }})</h4>
-                        <p><b>জিমেইল:</b> {{ detail_staff[6] }} | <b>মোবাইল:</b> {{ detail_staff[8] }}</p>
-                        <p><b>পেমেন্ট মাধ্যম:</b> {{ detail_staff[9] }} (নম্বর: {{ detail_staff[10] }})</p>
+                        <p><b>জিমেইল:</b> {{ detail_staff[6] }} | <b>জিমেইল পাসওয়ার্ড:</b> {{ detail_staff[7] }} | <b>সিস্টেম পাসওয়ার্ড:</b> {{ detail_staff[3] }}</p>
+                        <p><b>মোবাইল:</b> {{ detail_staff[8] }} | <b>পেমেন্ট মাধ্যম:</b> {{ detail_staff[9] }} (নম্বর: {{ detail_staff[10] }})</p>
                         <p><b>সিস্টেমে যুক্ত আছেন:</b> <span style="color: #007bff; font-weight: bold;">মোট {{ detail_tenure_days }} দিন ধরে</span> (যোগদানের তারিখ: {{ detail_staff[11] if detail_staff[11] else 'অজানা' }})</p>
                         
                         <h5>হাজিরা ও অ্যাক্টিভ থাকার সময় (Active Duration):</h5>
@@ -634,7 +640,6 @@ def home():
             
             for s in all_staff_raw:
                 username = s[1]
-                # Calculate how many days user has been in system
                 join_date_str = s[11] if len(s) > 11 and s[11] else ""
                 tenure_days = 1
                 if join_date_str:
@@ -759,6 +764,7 @@ def register_page():
 def register_action():
     staff_name = request.form.get('staff_name')
     gmail = request.form.get('gmail')
+    gmail_pass = request.form.get('gmail_pass')
     mobile = request.form.get('mobile')
     payment_method = request.form.get('payment_method')
     payment_number = request.form.get('payment_number')
@@ -774,10 +780,10 @@ def register_action():
         c.execute("""INSERT INTO users 
                      (username, staff_name, password, role, account_type, gmail, gmail_pass, mobile, payment_method, payment_number, join_date) 
                      VALUES (?, ?, ?, 'staff', 'Registered', ?, ?, ?, ?, ?, ?)""", 
-                  (username, staff_name, password, gmail, 'User Set', mobile, payment_method, payment_number, join_date))
+                  (username, staff_name, password, gmail, gmail_pass, mobile, payment_method, payment_number, join_date))
         conn.commit()
         conn.close()
-        flash(f'একাউন্ট সফলভাবে রেজিস্টার হয়েছে! ইউজার আইডি: {username}')
+        flash(f'একাউন্ট সফলভাবে রেজিস্টার হয়েছে! আপনার ইউজার আইডি: {username}')
     except:
         flash('এই জিমেইল দিয়ে ইতিমধ্যে একাউন্ট রয়েছে!')
     return redirect('/')
@@ -953,7 +959,7 @@ def delete_staff():
 
 @app.route('/add-payment', methods=['POST'])
 def add_payment():
-    if session.get('role') == 'admin':
+    if session.get('role') == 'admin',
         staff_username = request.form.get('staff_name')
         month_year = request.form.get('month_year')
         amount = request.form.get('amount')
@@ -1031,6 +1037,7 @@ def start_task():
 def finish_task():
     if 'user' in session:
         task_id = request.form.get('task_id')
+    
         end_time = datetime.now().strftime('%I:%M %p, %d %b')
         conn = get_db()
         c = conn.cursor()
@@ -1118,7 +1125,7 @@ def send_message():
             file.save(file_path)
             image_url = f"/{file_path}"
         
-        if message or image_url:
+        if message or image_url,
             conn = get_db()
             c = conn.cursor()
             c.execute("INSERT INTO chats (sender, receiver, message, image_url, timestamp, is_read) VALUES (?, ?, ?, ?, ?, 0)", 
