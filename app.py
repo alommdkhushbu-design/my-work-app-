@@ -28,7 +28,8 @@ def init_db():
                   gmail_pass TEXT,
                   mobile TEXT,
                   payment_method TEXT,
-                  payment_number TEXT)''')
+                  payment_number TEXT,
+                  join_date TEXT)''')
     
     c.execute('''CREATE TABLE IF NOT EXISTS attendance 
                  (id INTEGER PRIMARY KEY AUTOINCREMENT, username TEXT, check_in TEXT, check_out TEXT, date TEXT, active_duration TEXT)''')
@@ -56,7 +57,8 @@ def init_db():
     
     c.execute("SELECT * FROM users WHERE username='Khushbu23'")
     if not c.fetchone():
-        c.execute("INSERT INTO users (username, staff_name, password, role, account_type) VALUES ('Khushbu23', 'Admin', '01751947523', 'admin', 'Admin')")
+        join_d = datetime.now().strftime('%d %b, %Y')
+        c.execute("INSERT INTO users (username, staff_name, password, role, account_type, join_date) VALUES ('Khushbu23', 'Admin', '01751947523', 'admin', 'Admin', ?)", (join_d,))
     
     c.execute("SELECT * FROM system_config")
     if not c.fetchone():
@@ -305,17 +307,17 @@ HTML_LAYOUT = """
                 <h4 style="color: #28a745; margin-top: 20px;">🟢 ১. আজকের রেগুলার স্টাফ (যাঁরা আজ কাজ জমা দিয়েছেন)</h4>
                 <table>
                     <tr>
-                        <th style="text-align:center;">ID</th>
+                        <th style="text-align:center;">ID & Tenure</th>
                         <th style="text-align:center;">Name</th>
                         <th style="text-align:center;">Gmail & Pass</th>
-                        <th style="text-align:center;">Active Status / Duration</th>
+                        <th style="text-align:center;">Active Duration</th>
                         <th style="text-align:center;">Payment Info</th>
-                        <th style="text-align:center;">Action (পিন দিয়ে ডিলিট)</th>
+                        <th style="text-align:center;">Action</th>
                     </tr>
                     {% if regular_staff_list %}
                         {% for s in regular_staff_list %}
                         <tr style="text-align:center;">
-                            <td><b>{{ s[1] }}</b></td>
+                            <td><b>{{ s[1] }}</b><br><small style="color:gray;">যুক্ত আছেন: {{ s[12] }} দিন</small></td>
                             <td><a href="/?view_details={{ s[1] }}" style="color: #007bff; font-weight: bold; text-decoration: underline;">{{ s[2] }}</a></td>
                             <td>{{ s[6] }}<br><b style="color: red;">Pass: {{ s[3] }}</b></td>
                             <td><span style="color: green; font-weight: bold;">অ্যাক্টিভ ছিলেন:</span><br>{{ s[11] if s[11] else 'চলমান / হিসাব নেই' }}</td>
@@ -338,20 +340,25 @@ HTML_LAYOUT = """
                 <h4 style="color: #dc3545; margin-top: 25px;">🔴 ২. আজকের ইরেগুলার স্টাফ (যাঁরা আজ কাজ জমা দেননি)</h4>
                 <table>
                     <tr>
-                        <th style="text-align:center;">ID</th>
+                        <th style="text-align:center;">ID & Tenure</th>
                         <th style="text-align:center;">Name</th>
                         <th style="text-align:center;">Gmail & Pass</th>
-                        <th style="text-align:center;">Mobile</th>
+                        <th style="text-align:center;">Auto Reminder</th>
                         <th style="text-align:center;">Payment Info</th>
-                        <th style="text-align:center;">Action (পিন দিয়ে ডিলিট)</th>
+                        <th style="text-align:center;">Action</th>
                     </tr>
                     {% if irregular_staff_list %}
                         {% for s in irregular_staff_list %}
                         <tr style="text-align:center;">
-                            <td><b>{{ s[1] }}</b></td>
+                            <td><b>{{ s[1] }}</b><br><small style="color:gray;">যুক্ত আছেন: {{ s[12] }} দিন</small></td>
                             <td><a href="/?view_details={{ s[1] }}" style="color: #007bff; font-weight: bold; text-decoration: underline;">{{ s[2] }}</a></td>
                             <td>{{ s[6] }}<br><b style="color: red;">Pass: {{ s[3] }}</b></td>
-                            <td>{{ s[8] }}</td>
+                            <td>
+                                <form method="POST" action="/send-auto-reminder" style="margin:0;">
+                                    <input type="hidden" name="receiver" value="{{ s[1] }}">
+                                    <button type="submit" class="btn-warning" style="padding: 4px 8px; font-size: 11px; width: auto;">⚠️ রিমাইন্ডার পাঠান</button>
+                                </form>
+                            </td>
                             <td>{{ s[9] }} - {{ s[10] }}</td>
                             <td>
                                 <form method="POST" action="/delete-staff" style="margin:0;">
@@ -401,6 +408,7 @@ HTML_LAYOUT = """
                         <h4 style="margin-top: 0; color: #333;">📊 স্টাফ ডিটেলস রিপোর্ট: {{ detail_staff[2] }} (ID: {{ detail_staff[1] }})</h4>
                         <p><b>জিমেইল:</b> {{ detail_staff[6] }} | <b>মোবাইল:</b> {{ detail_staff[8] }}</p>
                         <p><b>পেমেন্ট মাধ্যম:</b> {{ detail_staff[9] }} (নম্বর: {{ detail_staff[10] }})</p>
+                        <p><b>সিস্টেমে যুক্ত আছেন:</b> <span style="color: #007bff; font-weight: bold;">মোট {{ detail_tenure_days }} দিন ধরে</span> (যোগদানের তারিখ: {{ detail_staff[11] if detail_staff[11] else 'অজানা' }})</p>
                         
                         <h5>হাজিরা ও অ্যাক্টিভ থাকার সময় (Active Duration):</h5>
                         {% if staff_attendance_logs %}
@@ -618,7 +626,6 @@ def home():
                 c.execute("SELECT * FROM users WHERE role='staff'")
             all_staff_raw = c.fetchall()
             
-            # Separate regular (who submitted work today) and irregular staff
             c.execute("SELECT DISTINCT username FROM gmail_work WHERE date=?", (today,))
             submitted_usernames = [row[0] for row in c.fetchall()]
             
@@ -627,13 +634,22 @@ def home():
             
             for s in all_staff_raw:
                 username = s[1]
-                # Get today's active duration if any
+                # Calculate how many days user has been in system
+                join_date_str = s[11] if len(s) > 11 and s[11] else ""
+                tenure_days = 1
+                if join_date_str:
+                    try:
+                        jd = datetime.strptime(join_date_str, '%d %b, %Y')
+                        diff = datetime.now() - jd
+                        tenure_days = max(1, diff.days + 1)
+                    except:
+                        tenure_days = 1
+
                 c.execute("SELECT active_duration FROM attendance WHERE username=? AND date=?", (username, today))
                 att_row = c.fetchone()
                 duration = att_row[0] if att_row and att_row[0] else "হিসাব নেই"
                 
-                # Append active duration as a temporary field in tuple index 11
-                s_extended = list(s) + [duration]
+                s_extended = list(s) + [duration, tenure_days]
                 
                 if username in submitted_usernames:
                     regular_staff_list.append(s_extended)
@@ -675,11 +691,20 @@ def home():
                 
             view_staff_id = request.args.get('view_details')
             detail_staff = None
+            detail_tenure_days = 1
             staff_attendance_logs = []
             staff_work_logs = []
             if view_staff_id:
                 c.execute("SELECT * FROM users WHERE username=?", (view_staff_id,))
                 detail_staff = c.fetchone()
+                if detail_staff and len(detail_staff) > 11 and detail_staff[11]:
+                    try:
+                        jd = datetime.strptime(detail_staff[11], '%d %b, %Y')
+                        diff = datetime.now() - jd
+                        detail_tenure_days = max(1, diff.days + 1)
+                    except:
+                        detail_tenure_days = 1
+
                 c.execute("SELECT * FROM attendance WHERE username=? ORDER BY id DESC", (view_staff_id,))
                 staff_attendance_logs = c.fetchall()
                 c.execute("SELECT * FROM gmail_work WHERE username=? ORDER BY id DESC", (view_staff_id,))
@@ -693,7 +718,8 @@ def home():
                                          admin_contact=admin_contact, selected_chat_user=selected_chat_user, 
                                          chat_messages=chat_messages, search_query=search_query, 
                                          admin_docs=admin_docs, trash_items=trash_items,
-                                         detail_staff=detail_staff, staff_attendance_logs=staff_attendance_logs,
+                                         detail_staff=detail_staff, detail_tenure_days=detail_tenure_days,
+                                         staff_attendance_logs=staff_attendance_logs,
                                          staff_work_logs=staff_work_logs, unread_dict=unread_dict,
                                          total_unread_admin=total_unread_admin, first_unread_sender=first_unread_sender,
                                          all_payments=all_payments)
@@ -737,6 +763,7 @@ def register_action():
     payment_method = request.form.get('payment_method')
     payment_number = request.form.get('payment_number')
     password = request.form.get('password')
+    join_date = datetime.now().strftime('%d %b, %Y')
     
     rand_num = random.randint(1000, 9999)
     username = f"staff_{rand_num}"
@@ -745,9 +772,9 @@ def register_action():
         conn = get_db()
         c = conn.cursor()
         c.execute("""INSERT INTO users 
-                     (username, staff_name, password, role, account_type, gmail, gmail_pass, mobile, payment_method, payment_number) 
-                     VALUES (?, ?, ?, 'staff', 'Registered', ?, ?, ?, ?, ?)""", 
-                  (username, staff_name, password, gmail, 'User Set', mobile, payment_method, payment_number))
+                     (username, staff_name, password, role, account_type, gmail, gmail_pass, mobile, payment_method, payment_number, join_date) 
+                     VALUES (?, ?, ?, 'staff', 'Registered', ?, ?, ?, ?, ?, ?)""", 
+                  (username, staff_name, password, gmail, 'User Set', mobile, payment_method, payment_number, join_date))
         conn.commit()
         conn.close()
         flash(f'একাউন্ট সফলভাবে রেজিস্টার হয়েছে! ইউজার আইডি: {username}')
@@ -785,15 +812,16 @@ def create_staff():
         payment_method = request.form.get('payment_method')
         payment_number = request.form.get('payment_number')
         entered_pin = request.form.get('security_pin')
+        join_date = datetime.now().strftime('%d %b, %Y')
         
         if entered_pin == SECURITY_PIN:
             try:
                 conn = get_db()
                 c = conn.cursor()
                 c.execute("""INSERT INTO users 
-                             (username, staff_name, password, role, account_type, gmail, gmail_pass, mobile, payment_method, payment_number) 
-                             VALUES (?, ?, ?, 'staff', 'Extra', ?, ?, ?, ?, ?)""", 
-                          (staff_user, staff_name, staff_pass, gmail, gmail_pass, mobile, payment_method, payment_number))
+                             (username, staff_name, password, role, account_type, gmail, gmail_pass, mobile, payment_method, payment_number, join_date) 
+                             VALUES (?, ?, ?, 'staff', 'Extra', ?, ?, ?, ?, ?, ?)""", 
+                          (staff_user, staff_name, staff_pass, gmail, gmail_pass, mobile, payment_method, payment_number, join_date))
                 conn.commit()
                 conn.close()
                 flash('পার্সোনাল আইডি সফলভাবে সেভ করা হয়েছে!')
@@ -801,6 +829,22 @@ def create_staff():
                 flash('এই ইউজার আইডিটি আগে থেকেই ডাটাবেসে রয়েছে!')
         else:
             flash('ভুল সিকিউরিটি কোড (137955) দিন!')
+    return redirect('/')
+
+@app.route('/send-auto-reminder', methods=['POST'])
+def send_auto_reminder():
+    if session.get('role') == 'admin':
+        receiver = request.form.get('receiver')
+        message = "আপনার দ্রুত কাজ জমা দিন"
+        timestamp = datetime.now().strftime('%I:%M %p, %d %b')
+        
+        conn = get_db()
+        c = conn.cursor()
+        c.execute("INSERT INTO chats (sender, receiver, message, timestamp, is_read) VALUES ('Khushbu23', ?, ?, ?, 0)", 
+                  (receiver, message, timestamp))
+        conn.commit()
+        conn.close()
+        flash(f'স্টাফ ({receiver}) এর কাছে রিমাইন্ডার মেসেজ পাঠানো হয়েছে!')
     return redirect('/')
 
 @app.route('/save-admin-doc', methods=['POST'])
