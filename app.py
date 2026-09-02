@@ -1,512 +1,1139 @@
-import os
 import sqlite3
+import random
+import os
 from datetime import datetime
-from flask import Flask, request, jsonify, render_template_string, session, redirect, url_for
-from werkzeug.security import generate_password_hash, check_password_hash
-from werkzeug.utils import secure_filename
+from flask import Flask, render_template_string, request, session, redirect, url_for, flash
 
 app = Flask(__name__)
-app.secret_key = os.environ.get("SECRET_KEY", "btcl_kurigram_green_vibrant_pro_2026")
-MAIN_ADMIN_USERNAME = "Khushbu23"
+app.secret_key = 'admin_super_secret_key'
 
-BASE_DIR = os.path.abspath(os.path.dirname(__file__))
-UPLOAD_FOLDER = os.path.join(BASE_DIR, 'static', 'uploads')
-os.makedirs(UPLOAD_FOLDER, exist_ok=True)
-app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
-DB_PATH = os.path.join(BASE_DIR, 'database.db')
+SECURITY_PIN = "137955"
 
-def db_exec(query, params=(), fetchone=False, fetchall=False, commit=False):
-    try:
-        conn = sqlite3.connect(DB_PATH, timeout=30.0)
-        conn.row_factory = sqlite3.Row
-        cur = conn.cursor()
-        cur.execute(query, params)
-        res = None
-        if fetchone:
-            res = cur.fetchone()
-        elif fetchall:
-            res = cur.fetchall()
-        if commit:
-            conn.commit()
-        conn.close()
-        return res
-    except Exception as e:
-        print(f"Database Error: {e} | Query: {query}")
-        return None
+def get_db():
+    conn = sqlite3.connect('attendance.db')
+    return conn
 
 def init_db():
-    db_exec('''CREATE TABLE IF NOT EXISTS users (
-        id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT, username TEXT UNIQUE, email TEXT, phone TEXT,
-        password TEXT, raw_pass TEXT, role TEXT DEFAULT 'user', status TEXT DEFAULT 'pending',
-        profile_pic TEXT DEFAULT '', added_by TEXT DEFAULT 'Khushbu23', is_deleted INTEGER DEFAULT 0,
-        last_active DATETIME DEFAULT CURRENT_TIMESTAMP, created_at DATETIME DEFAULT CURRENT_TIMESTAMP)''', commit=True)
+    conn = get_db()
+    c = conn.cursor()
     
-    db_exec('''CREATE TABLE IF NOT EXISTS phone_records (
-        id INTEGER PRIMARY KEY AUTOINCREMENT, customer_name TEXT NOT NULL, mobile TEXT, service_type TEXT,
-        connection_num TEXT, address TEXT, note TEXT, record_image TEXT DEFAULT '', added_by TEXT DEFAULT 'Khushbu23',
-        is_deleted INTEGER DEFAULT 0, created_at DATETIME DEFAULT CURRENT_TIMESTAMP)''', commit=True)
+    c.execute('''CREATE TABLE IF NOT EXISTS users 
+                 (id INTEGER PRIMARY KEY AUTOINCREMENT, 
+                  username TEXT UNIQUE, 
+                  staff_name TEXT,
+                  password TEXT, 
+                  role TEXT,
+                  account_type TEXT,
+                  gmail TEXT,
+                  gmail_pass TEXT,
+                  mobile TEXT,
+                  payment_method TEXT,
+                  payment_number TEXT,
+                  join_date TEXT)''')
     
-    db_exec('''CREATE TABLE IF NOT EXISTS activity_logs (
-        id INTEGER PRIMARY KEY AUTOINCREMENT, actor TEXT, action_type TEXT, details TEXT, timestamp DATETIME DEFAULT CURRENT_TIMESTAMP)''', commit=True)
+    c.execute('''CREATE TABLE IF NOT EXISTS attendance 
+                 (id INTEGER PRIMARY KEY AUTOINCREMENT, username TEXT, check_in TEXT, check_out TEXT, date TEXT, active_duration TEXT)''')
     
-    db_exec('''CREATE TABLE IF NOT EXISTS messages (
-        id INTEGER PRIMARY KEY AUTOINCREMENT, sender TEXT, receiver TEXT, message TEXT, file_url TEXT,
-        is_group INTEGER DEFAULT 0, is_read INTEGER DEFAULT 0, timestamp DATETIME DEFAULT CURRENT_TIMESTAMP)''', commit=True)
+    c.execute('''CREATE TABLE IF NOT EXISTS gmail_work 
+                 (id INTEGER PRIMARY KEY AUTOINCREMENT, username TEXT, gmail_used TEXT, work_count INTEGER, comment_used TEXT, date TEXT)''')
 
-    admin_check = db_exec("SELECT * FROM users WHERE username = ?", (MAIN_ADMIN_USERNAME,), fetchone=True)
-    if not admin_check:
-        db_exec("INSERT INTO users (name, username, email, phone, password, raw_pass, role, status) VALUES (?, ?, ?, ?, ?, ?, 'main_admin', 'active')",
-                ('Md Khushbu Alom', MAIN_ADMIN_USERNAME, 'admin@btcl.com', '01751947523', generate_password_hash("01751947523"), '01751947523'), commit=True)
+    c.execute('''CREATE TABLE IF NOT EXISTS payments 
+                 (id INTEGER PRIMARY KEY AUTOINCREMENT, username TEXT, month_year TEXT, amount REAL, payment_method TEXT, payment_number TEXT, payment_date TEXT)''')
+
+    c.execute('''CREATE TABLE IF NOT EXISTS personal_payment_notes 
+                 (id INTEGER PRIMARY KEY AUTOINCREMENT, username TEXT, note_title TEXT, note_details TEXT, date_saved TEXT)''')
+
+    c.execute('''CREATE TABLE IF NOT EXISTS system_config 
+                 (id INTEGER PRIMARY KEY AUTOINCREMENT, preset_comment TEXT, admin_contact TEXT)''')
+
+    c.execute('''CREATE TABLE IF NOT EXISTS chats 
+                 (id INTEGER PRIMARY KEY AUTOINCREMENT, sender TEXT, receiver TEXT, message TEXT, image_url TEXT, timestamp TEXT, is_read INTEGER DEFAULT 0)''')
+
+    c.execute('''CREATE TABLE IF NOT EXISTS assigned_tasks 
+                 (id INTEGER PRIMARY KEY AUTOINCREMENT, username TEXT, task_details TEXT, assigned_date TEXT, status TEXT, start_time TEXT, end_time TEXT)''')
+                 
+    c.execute('''CREATE TABLE IF NOT EXISTS trash_bin 
+                 (id INTEGER PRIMARY KEY AUTOINCREMENT, item_type TEXT, item_details TEXT, deleted_time TEXT)''')
+    
+    c.execute("SELECT * FROM users WHERE username='Khushbu23'")
+    if not c.fetchone():
+        join_d = datetime.now().strftime('%d %b, %Y')
+        c.execute("INSERT INTO users (username, staff_name, password, role, account_type, join_date) VALUES ('Khushbu23', 'Admin', '01751947523', 'admin', 'Admin', ?)", (join_d,))
+    
+    c.execute("SELECT * FROM system_config")
+    if not c.fetchone():
+        c.execute("INSERT INTO system_config (preset_comment, admin_contact) VALUES ('Great service! Highly recommended.', 'WhatsApp / Call: 01751947523')")
+
+    conn.commit()
+    conn.close()
 
 init_db()
 
-HTML_TEMPLATE = """
+HTML_LAYOUT = """
 <!DOCTYPE html>
-<html lang="bn">
+<html>
 <head>
-    <meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>BTCL, কুড়িগ্রাম - Smart Control Desk</title>
-    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <title>Staff & Task Management System</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
     <style>
-        body { background: linear-gradient(135deg, #052e16 0%, #064e3b 50%, #022c22 100%); color: #ecfdf5; font-family: 'Segoe UI', sans-serif; min-height: 100vh; padding-bottom: 70px; }
-        .green-vibrant-header { background: linear-gradient(90deg, #10b981 0%, #34d399 50%, #059669 100%); color: #022c22; font-weight: bold; box-shadow: 0 4px 15px rgba(16, 185, 129, 0.4); }
-        .card-custom { background: rgba(6, 78, 59, 0.95); border: 1px solid #34d399; border-radius: 12px; box-shadow: 0 4px 20px rgba(52, 211, 153, 0.15); }
-        .form-label, .form-control, .form-select { color: #fff; background-color: #022c22; border-color: #10b981; }
-        .form-control:focus, .form-select:focus { background-color: #022c22; color: #fff; border-color: #34d399; box-shadow: 0 0 10px rgba(52, 211, 153, 0.5); }
-        .btn-green-gold { background: linear-gradient(45deg, #10b981, #fbbf24); color: #000; font-weight: bold; border: none; }
-        .btn-emerald { background: linear-gradient(45deg, #34d399, #059669); color: #000; font-weight: bold; border: none; }
-        .stat-card { background: rgba(16, 185, 129, 0.2); border: 1px solid #34d399; text-align: center; cursor: pointer; padding: 10px; border-radius: 10px; transition: 0.3s; }
-        .stat-card:hover { background: rgba(52, 211, 153, 0.4); transform: scale(1.02); }
-        .stat-number { font-size: 18px; font-weight: bold; color: #fde047; }
-        .close-cross { font-size: 1.5rem; color: #34d399; cursor: pointer; }
-        .dropdown-menu-dark { background-color: #064e3b; border: 1px solid #34d399; }
-        .dropdown-item { color: #ecfdf5; } .dropdown-item:hover { background-color: #10b981; color: #000; font-weight: bold; }
-        .notification-badge { position: absolute; top: -5px; right: -5px; font-size: 11px; padding: 3px 7px; border-radius: 50%; background: #ef4444; color: white; font-weight: bold; }
-        .chat-box { height: 380px; overflow-y: auto; background: #022c22; padding: 15px; border-radius: 8px; border: 1px solid #10b981; display: flex; flex-direction: column; }
-        .message-bubble { padding: 8px 12px; border-radius: 10px; margin-bottom: 8px; max-width: 75%; word-break: break-word; }
-        .msg-incoming { background: #064e3b; color: #fff; align-self: flex-start; border: 1px solid #34d399; }
-        .msg-outgoing { background: #10b981; color: #000; align-self: flex-end; font-weight: 500; }
-        .clickable-name { color: #fde047; cursor: pointer; text-decoration: underline; }
-        .floating-add-btn { position: fixed; bottom: 25px; right: 25px; width: 65px; height: 65px; border-radius: 50%; background: linear-gradient(45deg, #10b981, #fbbf24); color: #000; font-size: 28px; display: flex; align-items: center; justify-content: center; box-shadow: 0 4px 20px rgba(16,185,129,0.7); border: none; z-index: 1000; cursor: pointer; }
-        .status-dot { width: 10px; height: 10px; background-color: #22c55e; border-radius: 50%; display: inline-block; }
+        body { font-family: Arial; margin: 15px; background: #eef2f3; }
+        .card { background: white; padding: 20px; border-radius: 8px; max-width: 850px; margin: 0 auto; box-shadow: 0 4px 8px rgba(0,0,0,0.1); }
+        input, select, textarea { width: 93%; padding: 8px; margin: 5px 0; border: 1px solid #ccc; border-radius: 4px; }
+        button { background: #007bff; color: white; border: none; padding: 10px; width: 97%; cursor: pointer; border-radius: 4px; font-weight: bold; margin-top: 5px; }
+        .btn-danger { background: #dc3545; }
+        .btn-success { background: #28a745; }
+        .btn-warning { background: #ffc107; color: black; }
+        .stats-box { display: flex; gap: 10px; margin-bottom: 15px; }
+        .stat-card { background: #28a745; color: white; padding: 15px; border-radius: 6px; flex: 1; text-align: center; font-size: 16px; }
+        .stat-card-warning { background: #dc3545; color: white; padding: 15px; border-radius: 6px; flex: 1; text-align: center; font-size: 16px; }
+        .notification-badge { background: #dc3545; color: white; padding: 4px 8px; border-radius: 12px; font-size: 12px; font-weight: bold; text-decoration: none; display: inline-block; }
+        table { width: 100%; margin-top: 15px; border-collapse: collapse; font-size: 13px; display: block; overflow-x: auto; }
+        th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
+        th { background: #343a40; color: white; text-align: center; }
+        .comment-box { background: #fff3cd; border: 1px solid #ffeeba; padding: 10px; border-radius: 5px; margin-bottom: 10px; }
+        .chat-box { background: #f1f1f1; border: 1px solid #ccc; padding: 10px; border-radius: 5px; height: 220px; overflow-y: scroll; margin-bottom: 10px; }
+        .chat-msg { margin: 8px 0; padding: 8px; border-radius: 6px; background: white; border: 1px solid #ddd; }
+        .msg-admin { background: #d4edda; text-align: left; }
+        .msg-staff { background: #d1ecf1; text-align: right; }
+        .chat-img { max-width: 150px; border-radius: 5px; margin-top: 5px; display: block; }
+        details { background: #f8f9fa; padding: 10px; border: 1px solid #ddd; border-radius: 5px; margin-top: 15px; }
+        summary { font-weight: bold; cursor: pointer; color: #333; }
+        .search-box { background: #e9ecef; padding: 10px; border-radius: 5px; margin-bottom: 15px; }
+        .link-btn { text-align: center; margin-top: 15px; }
+        .link-btn a { color: #007bff; text-decoration: none; font-weight: bold; }
     </style>
 </head>
 <body>
-<div class="green-vibrant-header text-center py-2">
-    <h3 class="m-0"><i class="fa-solid fa-phone-volume"></i> BTCL, কুড়িগ্রাম</h3>
-    <small>Smart Control Desk & Messenger</small>
-</div>
-<div class="container py-3">
-    {% if session.get('user') %}
-    <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
-        <div class="d-flex align-items-center gap-2 flex-wrap">
-            <button class="btn btn-emerald btn-sm" onclick="showHome()"><i class="fa-solid fa-house"></i> হোম</button>
-            {% if session.get('user').get('role') in ['admin', 'main_admin'] %}
-            <div class="dropdown">
-                <button class="btn btn-green-gold btn-sm dropdown-toggle" type="button" data-bs-toggle="dropdown"><i class="fa-solid fa-bars"></i> মেনু</button>
-                <ul class="dropdown-menu dropdown-menu-dark">
-                    <li><a class="dropdown-item" href="#" onclick="openUserListModal()"><i class="fa-solid fa-users me-2"></i>ইউজার ও এডমিন তালিকা (<span id="totalUsersCountMenu">0</span>)</a></li>
-                    {% if session.get('user').get('username') == MAIN_ADMIN_USERNAME %}
-                    <li><a class="dropdown-item" href="#" onclick="openCreateAdminModal()"><i class="fa-solid fa-user-shield me-2"></i>এডমিন তৈরি করুন</a></li>
-                    <li><a class="dropdown-item" href="#" onclick="openCreateUserModal()"><i class="fa-solid fa-user-plus me-2"></i>ইউজার তৈরি করুন</a></li>
-                    <li><a class="dropdown-item text-warning" href="#" onclick="openAccountRequestsModal()"><i class="fa-solid fa-user-check me-2"></i>রিকোয়েস্ট <span id="reqMenuBadge" class="badge bg-danger ms-1" style="display:none;">0</span></a></li>
-                    {% endif %}
-                </ul>
-            </div>
+    <div class="card">
+        {% with messages = get_flashed_messages() %}
+          {% if messages %}
+            {% for msg in messages %}<p style="color: blue; text-align: center;"><b>{{ msg }}</b></p>{% endfor %}
+          {% endif %}
+        {% endwith %}
+
+        {% if not session.get('user') %}
+            {% if request.path == '/register' %}
+                <h2 style="text-align: center;">নতুন একাউন্ট রেজিস্টার করুন</h2>
+                <form method="POST" action="/register-action">
+                    <input type="text" name="staff_name" placeholder="আপনার নাম (Staff Name)" required><br>
+                    <input type="email" name="gmail" placeholder="জিমেইল এড্রেস (Gmail)" required><br>
+                    <input type="text" name="mobile" placeholder="মোবাইল নম্বর" required><br>
+                    <select name="payment_method" required>
+                        <option value="bKash">বিকাশ (bKash)</option>
+                        <option value="Nagad">নগদ (Nagad)</option>
+                        <option value="Rocket">রকেট (Rocket)</option>
+                        <option value="Upay">উপায় (Upay)</option>
+                        <option value="Bank">ব্যাংক (Bank)</option>
+                    </select><br>
+                    <input type="text" name="payment_number" placeholder="পেমেন্ট নম্বর (যে নাম্বারে টাকা তুলবেন)" required><br>
+                    <input type="password" name="password" placeholder="পাসওয়ার্ড তৈরি করুন (Password)" required><br>
+                    <button type="submit" class="btn-success">Register Account</button>
+                </form>
+                <div class="link-btn">
+                    <a href="/">← লগইন পেজে ফিরে যান</a>
+                </div>
+            {% else %}
+                <h2 style="text-align: center;">Staff & Admin Login</h2>
+                <form method="POST" action="/login">
+                    <input type="text" name="username" placeholder="Enter Username / Gmail / Staff ID" required><br>
+                    <input type="password" name="password" placeholder="Enter Password" required><br>
+                    <button type="submit">Login</button>
+                </form>
+                <div class="link-btn">
+                    <p>একাউন্ট নেই? <a href="/register">নতুন একাউন্ট তৈরি করুন</a></p>
+                </div>
             {% endif %}
-            <button class="btn btn-outline-warning btn-sm position-relative fw-bold" onclick="openMessengerModal()"><i class="fa-solid fa-comments"></i> মেসেঞ্জার <span id="msgBadge" class="notification-badge" style="display:none;">0</span></button>
-            <button class="btn btn-outline-success btn-sm fw-bold" onclick="openActiveUsersModal()"><i class="fa-solid fa-signal"></i> অ্যাক্টিভ <span id="activeCountBadge" class="badge bg-success ms-1">0</span></button>
-        </div>
-        <div class="d-flex align-items-center gap-2">
-            <span class="badge bg-success border border-warning px-2 py-1"><i class="fa-solid fa-shield-halved"></i> এডমিন: <span id="totalAdminCount">0</span> জন</span>
-            <div class="dropdown">
-                <button class="btn btn-green-gold btn-sm dropdown-toggle" type="button" data-bs-toggle="dropdown"><i class="fa-solid fa-circle-user"></i> প্রোফাইল</button>
-                <ul class="dropdown-menu dropdown-menu-dark dropdown-menu-end">
-                    <li><a class="dropdown-item" href="#" onclick="openProfileModal()"><i class="fa-solid fa-image me-2"></i>ছবি আপডেট</a></li>
-                    {% if session.get('user').get('username') == MAIN_ADMIN_USERNAME %}
-                    <li><a class="dropdown-item" href="#" onclick="openAdminHistoryModal()"><i class="fa-solid fa-clock-rotate-left me-2"></i>এডমিন হিস্ট্রি</a></li>
-                    <li><a class="dropdown-item text-danger" href="#" onclick="openTrashBinModal()"><i class="fa-solid fa-trash-arrow-up me-2"></i>রিসাইকেল বিন</a></li>
+        {% else %}
+            <div style="display: flex; justify-content: space-between; align-items: center;">
+                <h3>
+                    {{ session['user'] }} ({{ session['role'] | upper }})
+                    {% if session['role'] == 'admin' and total_unread_admin > 0 %}
+                        <a href="/?chat_with={{ first_unread_sender }}" class="notification-badge">🔔 নতুন মেসেজ এসেছে ({{ total_unread_admin }} টি) - ক্লিক করুন</a>
+                    {% elif session['role'] == 'staff' and total_unread_staff > 0 %}
+                        <span class="notification-badge">🔔 নতুন মেসেজ: {{ total_unread_staff }} টি</span>
                     {% endif %}
-                </ul>
+                </h3>
+                <a href="/logout" style="color: red; font-weight: bold; text-decoration: none;">Logout</a>
             </div>
-            <a href="/logout" class="btn btn-danger btn-sm fw-bold"><i class="fa-solid fa-right-from-bracket"></i> লগআউট</a>
-        </div>
+            <hr>
+
+            {% if session['role'] == 'admin' %}
+                <div class="stats-box">
+                    <div class="stat-card">
+                        <h3>🟢 রেগুলার কাজ করেছে: {{ regular_staff_list|length }} জন</h3>
+                    </div>
+                    <div class="stat-card-warning">
+                        <h3>🔴 কাজ জমা দেয়নি: {{ irregular_staff_list|length }} জন</h3>
+                    </div>
+                </div>
+
+                <h3>স্টাফকে নির্দিষ্ট কাজ এসাইন (Assign Task) করুন</h3>
+                <form method="POST" action="/assign-task">
+                    <select name="staff_username" required>
+                        <option value="">কাজ দেওয়ার জন্য স্টাফ সিলেক্ট করুন</option>
+                        <optgroup label="🟢 রেজিস্টার্ড অ্যাকাউন্টসমূহ">
+                            {% for s in all_staff_raw %}
+                                {% if s[5] == 'Registered' %}
+                                <option value="{{ s[1] }}">{{ s[2] }} (ID: {{ s[1] }})</option>
+                                {% endif %}
+                            {% endfor %}
+                        </optgroup>
+                        <optgroup label="🔵 অ্যাডমিনের পার্সোনাল সেভ করা আইডি">
+                            {% for s in all_staff_raw %}
+                                {% if s[5] == 'Extra' %}
+                                <option value="{{ s[1] }}">{{ s[2] }} (ID: {{ s[1] }})</option>
+                                {% endif %}
+                            {% endfor %}
+                        </optgroup>
+                    </select><br>
+                    <textarea name="task_details" rows="3" placeholder="কাজের বিবরণ ও নির্দেশনা লিখুন..." required></textarea><br>
+                    <button type="submit" class="btn-success">Send Task to Staff</button>
+                </form>
+
+                <details>
+                    <summary>⚙️ পার্সোনাল আইডি তৈরি ও সিকিউর পেমেন্ট নোট টুলস</summary>
+                    <div style="margin-top: 10px;">
+                        <h4>নতুন পার্সোনাল আইডি সেভ করুন (Extra Account)</h4>
+                        <form method="POST" action="/create-staff">
+                            <input list="registered_users_list" name="staff_user" placeholder="স্টাফ ইউজার আইডি" autocomplete="off" required><br>
+                            <datalist id="registered_users_list">
+                                {% for s in all_staff_raw %}
+                                    {% if s[5] == 'Registered' %}
+                                    <option value="{{ s[1] }}">{{ s[2] }}</option>
+                                    {% endif %}
+                                {% endfor %}
+                            </datalist>
+
+                            <input type="text" name="staff_name" placeholder="স্টাফ নাম" required><br>
+                            <input type="email" name="gmail" placeholder="জিমেইল এড্রেস" required><br>
+                            <input type="text" name="gmail_pass" placeholder="জিমেইল পাসওয়ার্ড" required><br>
+                            <input type="text" name="staff_pass" placeholder="সাধারণ পাসওয়ার্ড" required><br>
+                            <input type="text" name="mobile" placeholder="মোবাইল নম্বর" required><br>
+                            <select name="payment_method" required>
+                                <option value="bKash">বিকাশ (bKash)</option>
+                                <option value="Nagad">নগদ (Nagad)</option>
+                                <option value="Rocket">রকেট (Rocket)</option>
+                                <option value="Upay">উপায় (Upay)</option>
+                                <option value="Bank">ব্যাংক (Bank)</option>
+                            </select><br>
+                            <input type="text" name="payment_number" placeholder="পেমেন্ট নম্বর" required><br>
+                            <input type="password" name="security_pin" placeholder="সিকিউরিটি কোড (137955)" required><br>
+                            <button type="submit" class="btn-success">Save Personal Profile</button>
+                        </form>
+                        <hr>
+                        <h4>মাসিক পেমেন্ট রেকর্ড যুক্ত করুন</h4>
+                        <form method="POST" action="/add-payment">
+                            <select name="staff_name" required>
+                                <option value="">স্টাফ নির্বাচন করুন</option>
+                                {% for s in all_staff_raw %}
+                                <option value="{{ s[1] }}">{{ s[2] }} (ID: {{ s[1] }})</option>
+                                {% endfor %}
+                            </select><br>
+                            <input type="text" name="month_year" placeholder="মাস ও বছর (যেমন: August 2026)" required><br>
+                            <input type="number" step="0.01" name="amount" placeholder="টাকার পরিমাণ" required><br>
+                            <select name="payment_method" required>
+                                <option value="bKash">বিকাশ</option>
+                                <option value="Nagad">নগদ</option>
+                                <option value="Rocket">রকেট</option>
+                                <option value="Upay">উপায়</option>
+                                <option value="Bank">ব্যাংক</option>
+                            </select><br>
+                            <input type="text" name="payment_number" placeholder="পেমেন্ট নম্বর" required><br>
+                            <button type="submit">Save Payment History</button>
+                        </form>
+                    </div>
+                </details>
+
+                <hr>
+                <h4>🔒 আমার পার্সোনাল সিকিউর পেমেন্ট ও ডকুমেন্ট নোট</h4>
+                <div style="background: #f8f9fa; padding: 10px; border: 1px solid #ced4da; border-radius: 5px;">
+                    <form method="POST" action="/save-admin-doc">
+                        <input type="text" name="note_title" placeholder="নোটের শিরোনাম" required><br>
+                        <textarea name="note_details" rows="2" placeholder="বিস্তারিত তথ্য লিখে রাখুন..." required></textarea><br>
+                        <input type="password" name="security_pin" placeholder="সিকিউরিটি পিন (137955) দিন" required><br>
+                        <button type="submit" class="btn-success">Save Secure Note</button>
+                    </form>
+                    
+                    {% if admin_docs %}
+                        <h5 style="margin-bottom: 5px;">সেভ করা ডকুমেন্ট ও নোটসমূহ:</h5>
+                        {% for doc in admin_docs %}
+                            <div style="background: white; padding: 8px; margin-top: 5px; border-radius: 4px; border: 1px solid #ddd;">
+                                <p style="margin:0;"><b>{{ doc[2] }}</b>: {{ doc[3] }} <small style="color:gray;">({{ doc[4] }})</small></p>
+                                <form method="POST" action="/delete-admin-doc" style="margin-top: 5px;">
+                                    <input type="hidden" name="doc_id" value="{{ doc[0] }}">
+                                    <input type="password" name="security_pin" placeholder="পিন কোড (137955)" style="width: 130px; padding: 3px;" required>
+                                    <button type="submit" class="btn-danger" style="padding: 3px 6px; width: auto; font-size: 11px;">Delete to Trash</button>
+                                </form>
+                            </div>
+                        {% endfor %}
+                    {% endif %}
+                </div>
+
+                <details style="background: #fff3cd; border-color: #ffeeba; margin-top: 15px;">
+                    <summary style="color: #856404;">🗑️ রিসাইকেল বিন / ট্র্যাশ হিস্ট্রি (ডিলিট করা আইটেমসমূহ)</summary>
+                    <div style="margin-top: 10px;">
+                        <p style="font-size: 12px; color: #666;">আপনি বা এডমিন সিকিউরিটি পিন দিয়ে যা যা ডিলিট করেছেন তা এখানে সংরক্ষিত আছে।</p>
+                        {% if trash_items %}
+                            <table>
+                                <tr>
+                                    <th>টাইপ / ক্যাটাগরি</th>
+                                    <th>ডিলিট হওয়া তথ্য ও বিবরণ</th>
+                                    <th>ডিলিটের সময়</th>
+                                </tr>
+                                {% for t in trash_items %}
+                                <tr>
+                                    <td><b>{{ t[1] }}</b></td>
+                                    <td>{{ t[2] }}</td>
+                                    <td><small>{{ t[3] }}</small></td>
+                                </tr>
+                                {% endfor %}
+                            </table>
+                        {% else %}
+                            <p style="color: gray;">রিসাইকেল বিন খালি রয়েছে।</p>
+                        {% endif %}
+                    </div>
+                </details>
+
+                <hr>
+                <div class="search-box">
+                    <h4>🔍 স্টাফ খুঁজুন</h4>
+                    <form method="GET" action="/">
+                        <input type="text" name="search" value="{{ search_query }}" placeholder="নাম, আইডি, জিমেইল বা মোবাইল দিয়ে খুঁজুন..." style="width: 80%;">
+                        <button type="submit" style="width: 15%; display: inline-block; background: #17a2b8;">Search</button>
+                    </form>
+                </div>
+
+                <!-- SECTION 1: REGULAR STAFF WHO SUBMITTED WORK TODAY -->
+                <h4 style="color: #28a745; margin-top: 20px;">🟢 ১. আজকের রেগুলার স্টাফ (যাঁরা আজ কাজ জমা দিয়েছেন)</h4>
+                <table>
+                    <tr>
+                        <th style="text-align:center;">ID & Tenure</th>
+                        <th style="text-align:center;">Name</th>
+                        <th style="text-align:center;">Gmail & Pass</th>
+                        <th style="text-align:center;">Active Duration</th>
+                        <th style="text-align:center;">Payment Info</th>
+                        <th style="text-align:center;">Action</th>
+                    </tr>
+                    {% if regular_staff_list %}
+                        {% for s in regular_staff_list %}
+                        <tr style="text-align:center;">
+                            <td><b>{{ s[1] }}</b><br><small style="color:gray;">যুক্ত আছেন: {{ s[12] }} দিন</small></td>
+                            <td><a href="/?view_details={{ s[1] }}" style="color: #007bff; font-weight: bold; text-decoration: underline;">{{ s[2] }}</a></td>
+                            <td>{{ s[6] }}<br><b style="color: red;">Pass: {{ s[3] }}</b></td>
+                            <td><span style="color: green; font-weight: bold;">অ্যাক্টিভ ছিলেন:</span><br>{{ s[11] if s[11] else 'চলমান / হিসাব নেই' }}</td>
+                            <td>{{ s[9] }} - {{ s[10] }}</td>
+                            <td>
+                                <form method="POST" action="/delete-staff" style="margin:0;">
+                                    <input type="hidden" name="username" value="{{ s[1] }}">
+                                    <input type="password" name="security_pin" placeholder="পিন (137955)" style="width: 85px; padding: 3px;" required>
+                                    <button type="submit" class="btn-danger" style="padding: 4px 6px; font-size: 11px; width: auto;">Delete</button>
+                                </form>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    {% else %}
+                        <tr><td colspan="6" style="text-align: center; color: gray;">আজ এখনো কেউ কাজ জমা দেয়নি।</td></tr>
+                    {% endif %}
+                </table>
+
+                <!-- SECTION 2: IRREGULAR STAFF WHO DID NOT SUBMIT WORK TODAY -->
+                <h4 style="color: #dc3545; margin-top: 25px;">🔴 ২. আজকের ইরেগুলার স্টাফ (যাঁরা আজ কাজ জমা দেননি)</h4>
+                <table>
+                    <tr>
+                        <th style="text-align:center;">ID & Tenure</th>
+                        <th style="text-align:center;">Name</th>
+                        <th style="text-align:center;">Gmail & Pass</th>
+                        <th style="text-align:center;">Auto Reminder</th>
+                        <th style="text-align:center;">Payment Info</th>
+                        <th style="text-align:center;">Action</th>
+                    </tr>
+                    {% if irregular_staff_list %}
+                        {% for s in irregular_staff_list %}
+                        <tr style="text-align:center;">
+                            <td><b>{{ s[1] }}</b><br><small style="color:gray;">যুক্ত আছেন: {{ s[12] }} দিন</small></td>
+                            <td><a href="/?view_details={{ s[1] }}" style="color: #007bff; font-weight: bold; text-decoration: underline;">{{ s[2] }}</a></td>
+                            <td>{{ s[6] }}<br><b style="color: red;">Pass: {{ s[3] }}</b></td>
+                            <td>
+                                <form method="POST" action="/send-auto-reminder" style="margin:0;">
+                                    <input type="hidden" name="receiver" value="{{ s[1] }}">
+                                    <button type="submit" class="btn-warning" style="padding: 4px 8px; font-size: 11px; width: auto;">⚠️ রিমাইন্ডার পাঠান</button>
+                                </form>
+                            </td>
+                            <td>{{ s[9] }} - {{ s[10] }}</td>
+                            <td>
+                                <form method="POST" action="/delete-staff" style="margin:0;">
+                                    <input type="hidden" name="username" value="{{ s[1] }}">
+                                    <input type="password" name="security_pin" placeholder="পিন (137955)" style="width: 85px; padding: 3px;" required>
+                                    <button type="submit" class="btn-danger" style="padding: 4px 6px; font-size: 11px; width: auto;">Delete</button>
+                                </form>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    {% else %}
+                        <tr><td colspan="6" style="text-align: center; color: gray;">সবাই আজ কাজ জমা দিয়েছে! কোনো ইরেগুলার স্টাফ নেই।</td></tr>
+                    {% endif %}
+                </table>
+
+                <!-- ALL PAYMENTS RECORD SECTION WITH EDIT OPTION -->
+                <hr>
+                <h4>💳 পেমেন্ট রেকর্ডসমূহ (এডিট বা আপডেট করুন)</h4>
+                {% if all_payments %}
+                    <table>
+                        <tr>
+                            <th>স্টাফ আইডি</th>
+                            <th>মাস ও বছর</th>
+                            <th>টাকা</th>
+                            <th>মাধ্যম ও নম্বর</th>
+                            <th>এডিট পেমেন্ট</th>
+                        </tr>
+                        {% for p in all_payments %}
+                        <tr>
+                            <form method="POST" action="/update-payment">
+                                <input type="hidden" name="pay_id" value="{{ p[0] }}">
+                                <td><b>{{ p[1] }}</b></td>
+                                <td><input type="text" name="month_year" value="{{ p[2] }}" style="width: 110px;"></td>
+                                <td><input type="number" step="0.01" name="amount" value="{{ p[3] }}" style="width: 70px;"></td>
+                                <td>{{ p[4] }} - <input type="text" name="payment_number" value="{{ p[5] }}" style="width: 100px;"></td>
+                                <td><button type="submit" class="btn-warning" style="padding: 3px 8px; width: auto; font-size: 11px;">Update</button></td>
+                            </form>
+                        </tr>
+                        {% endfor %}
+                    </table>
+                {% else %}
+                    <p style="color: gray;">কোনো পেমেন্ট হিস্ট্রি নেই।</p>
+                {% endif %}
+
+                {% if detail_staff %}
+                    <div style="background: #e2e3e5; padding: 15px; margin-top: 15px; border-radius: 5px; border: 1px solid #ccc;">
+                        <h4 style="margin-top: 0; color: #333;">📊 স্টাফ ডিটেলস রিপোর্ট: {{ detail_staff[2] }} (ID: {{ detail_staff[1] }})</h4>
+                        <p><b>জিমেইল:</b> {{ detail_staff[6] }} | <b>মোবাইল:</b> {{ detail_staff[8] }}</p>
+                        <p><b>পেমেন্ট মাধ্যম:</b> {{ detail_staff[9] }} (নম্বর: {{ detail_staff[10] }})</p>
+                        <p><b>সিস্টেমে যুক্ত আছেন:</b> <span style="color: #007bff; font-weight: bold;">মোট {{ detail_tenure_days }} দিন ধরে</span> (যোগদানের তারিখ: {{ detail_staff[11] if detail_staff[11] else 'অজানা' }})</p>
+                        
+                        <h5>হাজিরা ও অ্যাক্টিভ থাকার সময় (Active Duration):</h5>
+                        {% if staff_attendance_logs %}
+                            <ul>
+                            {% for att in staff_attendance_logs %}
+                                <li>তারিখ: {{ att[4] }} | Check-In: {{ att[2] }} | Check-Out: {{ att[3] if att[3] else 'চলমান' }} | <b style="color:green;">অ্যাক্টিভ ছিলেন: {{ att[5] if att[5] else 'হিসাব নেই' }}</b></li>
+                            {% endfor %}
+                            </ul>
+                        {% else %}
+                            <p style="color: gray;">কোনো হাজিরা রেকর্ড নেই।</p>
+                        {% endif %}
+                        
+                        <h5>জমা দেওয়া কাজের হিসাব:</h5>
+                        {% if staff_work_logs %}
+                            <ul>
+                            {% for wk in staff_work_logs %}
+                                <li>তারিখ: {{ wk[5] }} | জিমেইল: {{ wk[2] }} | কাজ সংখ্যা: {{ wk[3] }} টি</li>
+                            {% endfor %}
+                            </ul>
+                        {% else %}
+                            <p style="color: gray;">কোনো কাজের হিসাব নেই।</p>
+                        {% endif %}
+                        <a href="/" class="btn-success" style="display: block; text-align: center; text-decoration: none; padding: 6px;">বন্ধ করুন</a>
+                    </div>
+                {% endif %}
+
+                <hr>
+                <h4>💬 স্টাফদের মেসেজ ও লাইভ চ্যাট</h4>
+                <form method="GET" action="/">
+                    <select name="chat_with" onchange="this.form.submit()">
+                        <option value="">স্টাফ সিলেক্ট করুন</option>
+                        {% for s in all_staff_raw %}
+                            {% set unread_count = unread_dict.get(s[1], 0) %}
+                            <option value="{{ s[1] }}" {% if selected_chat_user == s[1] %}selected{% endif %}>
+                                {{ s[2] }} (ID: {{ s[1] }}) {% if unread_count > 0 %} ⭐ [ নতুন মেসেজ: {{ unread_count }} টি ]{% endif %}
+                            </option>
+                        {% endfor %}
+                    </select>
+                </form>
+
+                {% if selected_chat_user %}
+                    <div class="chat-box" id="chatBox">
+                        {% for msg in chat_messages %}
+                            <div class="chat-msg {% if msg[1] == 'Khushbu23' %}msg-admin{% else %}msg-staff{% endif %}">
+                                <small><b>{{ msg[1] }}</b> ({{ msg[5] }}):</small><br>
+                                <span>{{ msg[3] }}</span>
+                                {% if msg[4] %}
+                                    <a href="{{ msg[4] }}" target="_blank"><img src="{{ msg[4] }}" class="chat-img"></a>
+                                {% endif %}
+                            </div>
+                        {% endfor %}
+                    </div>
+                    <form method="POST" action="/send-message" enctype="multipart/form-data">
+                        <input type="hidden" name="receiver" value="{{ selected_chat_user }}">
+                        <input type="text" name="message" placeholder="উত্তর লিখুন..." autocomplete="off"><br>
+                        <input type="file" name="image" accept="image/*" style="padding: 3px;"><br>
+                        <button type="submit">Send Message & Screenshot</button>
+                    </form>
+                {% endif %}
+
+            {% else %}
+                <!-- STAFF PANEL -->
+                <h4>স্টাফ প্যানেল</h4>
+                <div style="display: flex; flex-direction: column; gap: 15px;">
+                    <div style="background: #e8f4fd; border: 1px solid #b8daff; padding: 10px; border-radius: 5px;">
+                        <h4 style="margin-top: 0; color: #004085;">📝 আমার পেমেন্ট ও আয়ের হিসাব (নিজের নোট)</h4>
+                        <form method="POST" action="/save-my-payment-note">
+                            <input type="text" name="note_title" placeholder="নোটের শিরোনাম" required><br>
+                            <textarea name="note_details" rows="2" placeholder="বিস্তারিত লিখুন..." required></textarea>
+                            <button type="submit" class="btn-success" style="padding: 8px;">Save My Payment Note</button>
+                        </form>
+
+                        {% if my_payment_notes %}
+                            <h5 style="margin-bottom: 5px; margin-top: 10px;">আপনার সেভ করা নোটসমূহ:</h5>
+                            {% for mnote in my_payment_notes %}
+                                <div style="background: white; padding: 8px; margin-top: 5px; border-radius: 4px; border: 1px solid #b8daff;">
+                                    <p style="margin:0;"><b>{{ mnote[2] }}</b>: {{ mnote[3] }} <small style="color:gray;">({{ mnote[4] }})</small></p>
+                                    <form method="POST" action="/delete-my-payment-note" style="margin-top: 5px;">
+                                        <input type="hidden" name="note_id" value="{{ mnote[0] }}">
+                                        <button type="submit" class="btn-danger" style="padding: 3px 6px; width: auto; font-size: 11px;">Delete</button>
+                                    </form>
+                                </div>
+                            {% endfor %}
+                        {% endif %}
+                    </div>
+
+                    <!-- Task Section -->
+                    {% if assigned_tasks %}
+                        <div style="background: #e8f4fd; border: 1px solid #b8daff; padding: 10px; border-radius: 5px;">
+                            <h4 style="margin-top: 0; color: #004085;">📥 এডমিন কর্তৃক প্রদত্ত কাজসমূহ:</h4>
+                            {% for task in assigned_tasks %}
+                                <div style="background: white; padding: 10px; margin-bottom: 8px; border-radius: 4px; border: 1px solid #b8daff;">
+                                    <p><b>কাজের বিবরণ:</b> {{ task[2] }}</p>
+                                    <p><b>স্ট্যাটাস:</b> <span style="color: {% if task[4] == 'Pending' %}orange{% elif task[4] == 'Accepted' %}blue{% else %}green{% endif %}; font-weight: bold;">{{ task[4] }}</span></p>
+                                    
+                                    {% if task[4] == 'Pending' %}
+                                        <form method="POST" action="/accept-task">
+                                            <input type="hidden" name="task_id" value="{{ task[0] }}">
+                                            <button type="submit" class="btn-success">Accept Task</button>
+                                        </form>
+                                    {% elif task[4] == 'Accepted' %}
+                                        {% if not task[5] %}
+                                            <form method="POST" action="/start-task">
+                                                <input type="hidden" name="task_id" value="{{ task[0] }}">
+                                                <button type="submit" class="btn-warning">Start Work</button>
+                                            </form>
+                                        {% else %}
+                                            <form method="POST" action="/finish-task">
+                                                <input type="hidden" name="task_id" value="{{ task[0] }}">
+                                                <button type="submit" class="btn-danger">Finish Work</button>
+                                            </form>
+                                        {% endif %}
+                                    {% endif %}
+                                </div>
+                            {% endfor %}
+                        </div>
+                    {% endif %}
+
+                    <div>
+                        {% if not today_log or not today_log[2] %}
+                            <form method="POST" action="/check-in">
+                                <button type="submit" class="btn-success">হাজিরা দিন (Check-In)</button>
+                            </form>
+                        {% else %}
+                            <p><b>Check-In Time:</b> {{ today_log[2] }}</p>
+                            <hr>
+                            <div class="comment-box">
+                                <p style="margin: 0; color: #856404;"><b>আজকের কাজ করার কমেন্ট:</b></p>
+                                <p id="commentText" style="font-weight: bold; font-size: 16px; margin: 5px 0;">{{ preset_comment }}</p>
+                                <button onclick="copyAndOpenGmail()" class="btn-warning" style="margin: 0;">কমেন্ট কপি করুন এবং জিমেইল খুলুন</button>
+                            </div>
+
+                            <h4>প্রতিদিনের কাজের হিসাব জমা দিন</h4>
+                            <form method="POST" action="/submit-gmail-work">
+                                <input type="email" name="gmail_used" placeholder="কোন জিমেইল থেকে কাজ করেছেন?" required><br>
+                                <input type="number" name="work_count" placeholder="এই জিমেইলে কয়টি কাজ?" required><br>
+                                <input type="hidden" name="comment_used" value="{{ preset_comment }}">
+                                <button type="submit" class="btn-success">Submit Work Count</button>
+                            </form>
+                            <hr>
+                            {% if not today_log[3] %}
+                                <form method="POST" action="/check-out">
+                                    <button type="submit" class="btn-danger">Check-Out</button>
+                                </form>
+                            {% else %}
+                                <p style="color: green;"><b>আজকের কাজ ও চেক-আউট সম্পন্ন হয়েছে!</b></p>
+                            {% endif %}
+                        {% endif %}
+                    </div>
+                </div>
+
+                <hr>
+                <h4>💬 এডমিনের সাথে চ্যাট করুন</h4>
+                <div class="chat-box" id="chatBox">
+                    {% for msg in chat_messages %}
+                        <div class="chat-msg {% if msg[1] == session['user'] %}msg-staff{% else %}msg-admin{% endif %}">
+                            <small><b>{{ msg[1] }}</b> ({{ msg[5] }}):</small><br>
+                            <span>{{ msg[3] }}</span>
+                            {% if msg[4] %}
+                                <a href="{{ msg[4] }}" target="_blank"><img src="{{ msg[4] }}" class="chat-img"></a>
+                            {% endif %}
+                        </div>
+                    {% endfor %}
+                </div>
+                <form method="POST" action="/send-message" enctype="multipart/form-data">
+                    <input type="hidden" name="receiver" value="Khushbu23">
+                    <input type="text" name="message" placeholder="মেসেজ লিখুন..." autocomplete="off"><br>
+                    <input type="file" name="image" accept="image/*" style="padding: 3px;"><br>
+                    <button type="submit">Send to Admin</button>
+                </form>
+
+                <script>
+                function copyAndOpenGmail() {
+                    var comment = document.getElementById("commentText").innerText;
+                    navigator.clipboard.writeText(comment).then(function() {
+                        alert("কমেন্ট কপি হয়েছে! জিমেইল ওপেন হচ্ছে...");
+                        window.open("https://mail.google.com", "_blank");
+                    });
+                }
+                </script>
+            {% endif %}
+
+            <script>
+                window.onload = function() {
+                    var cb = document.getElementById("chatBox");
+                    if (cb) {
+                        cb.scrollTop = cb.scrollHeight;
+                    }
+                };
+            </script>
+        {% endif %}
     </div>
-
-    <div class="row g-2 mb-3">
-        <div class="col-md-6"><div class="input-group"><input type="text" id="searchInput" class="form-control" placeholder="নাম, মোবাইল বা সংযোগ নম্বর..." oninput="loadRecords()"><button class="btn btn-green-gold" onclick="loadRecords()"><i class="fa-solid fa-magnifying-glass"></i></button></div></div>
-        <div class="col-md-6"><div class="input-group"><span class="input-group-text bg-dark text-warning">সর্ট:</span><select id="sortSelect" class="form-select" onchange="loadRecords()"><option value="id_desc">সর্বশেষ আগে</option><option value="id_asc">১ থেকে হাজার</option><option value="name_asc">নাম (A-Z)</option></select></div></div>
-    </div>
-
-    {% if session.get('user').get('role') in ['admin', 'main_admin'] %}
-    <div class="row g-2 mb-3">
-        <div class="col" onclick="filterService('')"><div class="stat-card"><div class="stat-number" id="countTotal">0</div><div style="font-size:11px;">সকল</div></div></div>
-        <div class="col" onclick="filterService('টেলিফোন নাম্বার')"><div class="stat-card"><div class="stat-number" id="countTel">0</div><div style="font-size:11px;">টেলিফোন</div></div></div>
-        <div class="col" onclick="filterService('টেলিফোন+ওয়াইফাই নম্বর')"><div class="stat-card"><div class="stat-number" id="countBoth">0</div><div style="font-size:11px;">উভয়</div></div></div>
-        <div class="col" onclick="filterService('ওয়াইফাই নাম্বার')"><div class="stat-card"><div class="stat-number" id="countWifi">0</div><div style="font-size:11px;">ওয়াইফাই</div></div></div>
-    </div>
-    {% endif %}
-
-    <div id="recordsSection" class="card-custom p-3 mb-4">
-        <div class="d-flex justify-content-between align-items-center border-bottom border-success pb-2"><h5 class="text-warning mb-0">গ্রাহক নম্বরসমূহ</h5><span class="badge bg-warning text-dark" id="currentFilterLabel">সকল নম্বর</span></div>
-        <div class="table-responsive"><table class="table table-dark table-striped align-middle mt-2"><thead><tr><th>নং</th><th>নাম</th><th>মোবাইল</th><th>সেবা</th><th>সংযোগ</th><th>ঠিকানা</th><th>যুক্তকারী</th>{% if session.get('user').get('role') in ['admin', 'main_admin'] %}<th>অ্যাকশন</th>{% endif %}</tr></thead><tbody id="recordsTableBody"></tbody></table></div>
-    </div>
-
-    <div id="userListSection" class="card-custom p-3 mb-4" style="display:none;">
-        <div class="d-flex justify-content-between align-items-center border-bottom border-success pb-2"><h5 class="text-warning mb-0">ইউজার তালিকা</h5><button class="btn btn-sm btn-outline-warning" onclick="showHome()">বন্ধ</button></div>
-        <div class="table-responsive mt-2"><table class="table table-dark table-striped align-middle"><thead><tr><th>নাম</th><th>ইউজারনেম</th><th>রোল</th><th>স্ট্যাটাস</th><th>অ্যাকশন</th></tr></thead><tbody id="userTableBody"></tbody></table></div>
-    </div>
-
-    {% if session.get('user').get('role') in ['admin', 'main_admin'] %}
-    <button class="floating-add-btn" onclick="openAddRecordModal()"><i class="fa-solid fa-plus"></i></button>
-    {% endif %}
-    {% else %}
-    <div class="row justify-content-center mt-5"><div class="col-md-5"><div class="card-custom p-4 text-center shadow-lg"><h4 class="text-warning mb-3">লগইন করুন</h4><form action="/login" method="POST"><div class="mb-3 text-start"><label class="form-label">ইউজারনেম / জিমেইল</label><input type="text" name="username" class="form-control" required></div><div class="mb-3 text-start"><label class="form-label">পাসওয়ার্ড</label><input type="password" name="password" class="form-control" required></div><button type="submit" class="btn btn-green-gold w-100">প্রবেশ</button></form><div class="mt-3"><button class="btn btn-outline-warning btn-sm" onclick="new bootstrap.Modal(document.getElementById('registerModal')).show()">রেজিস্ট্রেশন রিকোয়েস্ট</button></div></div></div></div>
-    {% endif %}
-</div>
-
-<!-- Modals -->
-<div class="modal fade" id="activeUsersModal" tabindex="-1"><div class="modal-dialog"><div class="modal-content card-custom"><div class="modal-header border-success"><h5 class="modal-title text-warning">অ্যাক্টিভ ইউজারগণ</h5><i class="fa-solid fa-xmark close-cross" data-bs-dismiss="modal"></i></div><div class="modal-body" id="activeUsersListModalBody"></div></div></div></div>
-<div class="modal fade" id="customerDetailsModal" tabindex="-1"><div class="modal-dialog"><div class="modal-content card-custom"><div class="modal-header border-success"><h5 class="modal-title text-warning">বিস্তারিত তথ্য</h5><i class="fa-solid fa-xmark close-cross" data-bs-dismiss="modal"></i></div><div class="modal-body" id="customerDetailsBody"></div></div></div></div>
-<div class="modal fade" id="adminHistoryModal" tabindex="-1"><div class="modal-dialog modal-lg"><div class="modal-content card-custom"><div class="modal-header border-success"><h5 class="modal-title text-warning">এডমিন হিস্ট্রি</h5><i class="fa-solid fa-xmark close-cross" data-bs-dismiss="modal"></i></div><div class="modal-body"><table class="table table-dark table-striped"><thead><tr><th>নাম</th><th>ইউজারনেম</th><th>শেষ অ্যাক্টিভ</th><th>মোট</th></tr></thead><tbody id="adminHistoryTableBody"></tbody></table></div></div></div></div>
-<div class="modal fade" id="accountRequestsModal" tabindex="-1"><div class="modal-dialog modal-lg"><div class="modal-content card-custom"><div class="modal-header border-success"><h5 class="modal-title text-warning">রিকোয়েস্ট তালিকা</h5><i class="fa-solid fa-xmark close-cross" data-bs-dismiss="modal"></i></div><div class="modal-body"><table class="table table-dark table-striped"><thead><tr><th>নাম</th><th>ইউজার</th><th>ইমেইল</th><th>অ্যাকশন</th></tr></thead><tbody id="requestTableBody"></tbody></table></div></div></div></div>
-<div class="modal fade" id="registerModal" tabindex="-1"><div class="modal-dialog"><div class="modal-content card-custom"><div class="modal-header border-success"><h5 class="modal-title text-warning">রেজিস্ট্রেশন</h5><i class="fa-solid fa-xmark close-cross" data-bs-dismiss="modal"></i></div><form action="/api/register_request" method="POST" class="modal-body"><div class="mb-2"><input type="text" name="name" class="form-control" placeholder="নাম" required></div><div class="mb-2"><input type="text" name="username" class="form-control" placeholder="ইউজারনেম" required></div><div class="mb-2"><input type="email" name="email" class="form-control" placeholder="জিমেইল" required></div><div class="mb-2"><input type="text" name="phone" class="form-control" placeholder="মোবাইল"></div><div class="mb-3"><input type="password" name="password" class="form-control" placeholder="পাসওয়ার্ড" required></div><button type="submit" class="btn btn-green-gold w-100">পাঠান</button></form></div></div></div>
-<div class="modal fade" id="messengerModal" tabindex="-1"><div class="modal-dialog modal-lg"><div class="modal-content card-custom"><div class="modal-header border-success"><h5 class="modal-title text-warning">মেসেঞ্জার</h5><i class="fa-solid fa-xmark close-cross" data-bs-dismiss="modal"></i></div><div class="modal-body"><div class="row"><div class="col-md-4 border-end border-success"><div class="d-flex gap-1 mb-2"><button class="btn btn-sm btn-green-gold w-50" onclick="switchChat('users')">ইনবক্স</button><button class="btn btn-sm btn-emerald w-50" onclick="switchChat('group')">গ্রুপ</button></div><div id="chatUserList" style="max-height:350px; overflow-y:auto;"></div></div><div class="col-md-8 d-flex flex-column"><div id="activeChatTitle" class="text-warning fw-bold mb-2 pb-1 border-bottom border-success">সিলেক্ট করুন</div><div id="chatMessages" class="chat-box mb-2"></div><form id="chatForm" onsubmit="sendMessage(event)" class="input-group" style="display:none;"><input type="text" id="chatInput" class="form-control" placeholder="মেসেজ..."><input type="file" id="chatFile" class="d-none"><button type="submit" class="btn btn-green-gold"><i class="fa-solid fa-paper-plane"></i></button></form></div></div></div></div></div></div>
-<div class="modal fade" id="recordModal" tabindex="-1"><div class="modal-dialog"><div class="modal-content card-custom"><div class="modal-header border-success"><h5 class="modal-title text-warning" id="recordModalTitle">নম্বর যোগ</h5><i class="fa-solid fa-xmark close-cross" data-bs-dismiss="modal"></i></div><form id="recordForm" onsubmit="saveRecord(event)" class="modal-body row g-2"><input type="hidden" id="rec_id" name="id"><div class="col-12"><input type="text" id="rec_name" name="customer_name" class="form-control" placeholder="গ্রাহকের নাম" required></div><div class="col-md-6"><input type="text" id="rec_mobile" name="mobile" class="form-control" placeholder="মোবাইল"></div><div class="col-md-6"><select id="rec_service" name="service_type" class="form-select"><option value="টেলিফোন নাম্বার">টেলিফোন</option><option value="টেলিফোন+ওয়াইফাই নম্বর">টেলিফোন+ওয়াইফাই</option><option value="ওয়াইফাই নাম্বার">ওয়াইফাই</option></select></div><div class="col-md-6"><input type="text" id="rec_conn" name="connection_num" class="form-control" placeholder="সংযোগ নম্বর"></div><div class="col-md-6"><input type="text" id="rec_address" name="address" class="form-control" placeholder="ঠিকানা"></div><div class="col-12"><input type="text" id="rec_note" name="note" class="form-control" placeholder="নোট"></div><div class="col-12"><input type="file" name="record_image_gallery" class="form-control" accept="image/*"></div><div class="col-12 text-end mt-2"><button type="submit" class="btn btn-green-gold">সেভ</button></div></form></div></div></div>
-<div class="modal fade" id="createUserModal" tabindex="-1"><div class="modal-dialog"><div class="modal-content card-custom"><div class="modal-header border-success"><h5 class="modal-title text-warning" id="createUserModalTitle">ইউজার তৈরি</h5><i class="fa-solid fa-xmark close-cross" data-bs-dismiss="modal"></i></div><form action="/api/create_user" method="POST" class="modal-body"><input type="hidden" id="target_role_input" name="role" value="user"><div class="mb-2"><input type="text" name="name" class="form-control" placeholder="নাম" required></div><div class="mb-2"><input type="text" name="username" class="form-control" placeholder="ইউজারনেম" required></div><div class="mb-2"><input type="email" name="email" class="form-control" placeholder="জিমেইল"></div><div class="mb-2"><input type="text" name="phone" class="form-control" placeholder="মোবাইল"></div><div class="mb-3"><input type="password" name="password" class="form-control" placeholder="পাসওয়ার্ড" required></div><button type="submit" class="btn btn-green-gold w-100">তৈরি করুন</button></form></div></div></div>
-<div class="modal fade" id="profileModal" tabindex="-1"><div class="modal-dialog"><div class="modal-content card-custom text-center"><div class="modal-header border-success"><h5 class="modal-title text-warning">প্রোফাইল ছবি</h5><i class="fa-solid fa-xmark close-cross" data-bs-dismiss="modal"></i></div><form action="/update_profile_pic" method="POST" enctype="multipart/form-data" class="modal-body"><div class="mb-3 text-start"><input type="file" name="profile_pic" class="form-control" accept="image/*" required></div><button type="submit" class="btn btn-green-gold w-100">আপডেট</button></form></div></div></div>
-<div class="modal fade" id="trashBinModal" tabindex="-1"><div class="modal-dialog modal-lg"><div class="modal-content card-custom"><div class="modal-header border-success"><h5 class="modal-title text-danger">রিসাইকেল বিন</h5><i class="fa-solid fa-xmark close-cross" data-bs-dismiss="modal"></i></div><div class="modal-body"><table class="table table-dark table-striped"><thead><tr><th>নাম</th><th>অ্যাকশন</th></tr></thead><tbody id="trashTableBody"></tbody></table></div></div></div></div>
-
-<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
-<script>
-let currentFilter = '', currentChatUser = '', currentChatTab = 'users';
-document.addEventListener("DOMContentLoaded", () => {
-    {% if session.get('user') %}
-    loadRecords(); loadStats(); loadAdminCount(); loadActiveCount(); loadUsersMenuCount();
-    setInterval(() => fetch('/api/ping').catch(()=>{}), 10000);
-    setInterval(pollData, 4000);
-    {% endif %}
-});
-function loadStats() {
-    fetch('/api/stats').then(res => res.json()).then(d => {
-        if(document.getElementById('countTotal')) {
-            document.getElementById('countTotal').innerText = d.total;
-            document.getElementById('countTel').innerText = d.tel;
-            document.getElementById('countBoth').innerText = d.both;
-            document.getElementById('countWifi').innerText = d.wifi;
-        }
-    });
-}
-function loadAdminCount() { fetch('/api/admin_count').then(r => r.json()).then(d => { if(document.getElementById('totalAdminCount')) document.getElementById('totalAdminCount').innerText = d.count; }); }
-function loadUsersMenuCount() { fetch('/api/users').then(r => r.json()).then(d => { if(document.getElementById('totalUsersCountMenu')) document.getElementById('totalUsersCountMenu').innerText = d.length; }); }
-function loadActiveCount() { fetch('/api/chat_users').then(r => r.json()).then(d => { document.getElementById('activeCountBadge').innerText = d.filter(u => u.is_online).length; }); }
-function openActiveUsersModal() {
-    fetch('/api/chat_users').then(r => r.json()).then(d => {
-        let b = document.getElementById('activeUsersListModalBody'); b.innerHTML = '';
-        d.filter(u => u.is_online).forEach(u => { b.innerHTML += `<div class="d-flex justify-content-between p-2 border-bottom border-success"><span>${u.name} (@${u.username})</span><span class="status-dot"></span></div>`; });
-        new bootstrap.Modal(document.getElementById('activeUsersModal')).show();
-    });
-}
-function showHome() { document.getElementById('recordsSection').style.display = 'block'; document.getElementById('userListSection').style.display = 'none'; }
-function filterService(t) { currentFilter = t; document.getElementById('currentFilterLabel').innerText = t || 'সকল নম্বর'; loadRecords(); }
-function loadRecords() {
-    let s = document.getElementById('searchInput').value, sort = document.getElementById('sortSelect').value;
-    fetch(`/api/records?search=${encodeURIComponent(s)}&sort=${sort}&service=${encodeURIComponent(currentFilter)}`).then(r => r.json()).then(d => {
-        let tb = document.getElementById('recordsTableBody'); tb.innerHTML = '';
-        if(!d || d.length === 0) { tb.innerHTML = `<tr><td colspan="8" class="text-center text-muted">রেকর্ড নেই</td></tr>`; return; }
-        d.forEach((r, i) => {
-            tb.innerHTML += `<tr><td>${i+1}</td><td class="clickable-name" onclick="openCustomerDetails(${r.id})">${r.customer_name}</td><td>${r.mobile||''}</td><td><span class="badge bg-success">${r.service_type}</span></td><td>${r.connection_num||''}</td><td>${r.address||''}</td><td><small class="text-warning">${r.added_by}</small></td>{% if session.get('user').get('role') in ['admin', 'main_admin'] %}<td><button class="btn btn-sm btn-outline-danger" onclick="deleteRecord(${r.id})"><i class="fa-solid fa-trash"></i></button></td>{% endif %}</tr>`;
-        });
-    });
-}
-function openUserListModal() {
-    document.getElementById('recordsSection').style.display = 'none'; document.getElementById('userListSection').style.display = 'block';
-    fetch('/api/users').then(r => r.json()).then(d => {
-        let tb = document.getElementById('userTableBody'); tb.innerHTML = '';
-        d.forEach(u => {
-            let btn = u.username !== '{{ MAIN_ADMIN_USERNAME }}' ? `<button class="btn btn-danger btn-sm" onclick="deleteUser(${u.id})">ডিলিট</button>` : `<span class="badge bg-success">মূল এডমিন</span>`;
-            tb.innerHTML += `<tr><td>${u.name}</td><td>${u.username}</td><td><span class="badge bg-warning text-dark">${u.role}</span></td><td><span class="badge bg-success">${u.status}</span></td><td>${btn}</td></tr>`;
-        });
-    });
-}
-function deleteUser(id) { if(confirm('ডিলিট করবেন?')) fetch(`/api/delete_user/${id}`, {method:'POST'}).then(r=>r.json()).then(d=>{if(d.success) openUserListModal();}); }
-function openCreateUserModal() { document.getElementById('target_role_input').value='user'; document.getElementById('createUserModalTitle').innerText='ইউজার তৈরি'; new bootstrap.Modal(document.getElementById('createUserModal')).show(); }
-function openCreateAdminModal() { document.getElementById('target_role_input').value='admin'; document.getElementById('createUserModalTitle').innerText='এডমিন তৈরি'; new bootstrap.Modal(document.getElementById('createUserModal')).show(); }
-function openAddRecordModal() { document.getElementById('recordForm').reset(); document.getElementById('rec_id').value=''; new bootstrap.Modal(document.getElementById('recordModal')).show(); }
-function saveRecord(e) {
-    e.preventDefault();
-    fetch('/api/save_record', {method:'POST', body:new FormData(document.getElementById('recordForm'))}).then(r=>r.json()).then(d=>{
-        if(d.success) { bootstrap.Modal.getInstance(document.getElementById('recordModal')).hide(); loadRecords(); loadStats(); }
-    });
-}
-function deleteRecord(id) { if(confirm('রিসাইকেল বিনে পাঠাবেন?')) fetch(`/api/delete_record/${id}`, {method:'POST'}).then(r=>r.json()).then(d=>{if(d.success){loadRecords();loadStats();}}); }
-function openMessengerModal() { new bootstrap.Modal(document.getElementById('messengerModal')).show(); switchChat('users'); }
-function switchChat(t) { currentChatTab = t; let l = document.getElementById('chatUserList'); l.innerHTML = '';
-    if(t === 'users') {
-        fetch('/api/chat_users').then(r=>r.json()).then(d=>{ d.forEach(u=>{ l.innerHTML += `<button class="list-group-item list-group-item-action bg-transparent text-light border-success d-flex justify-content-between" onclick="selectChat('${u.username}', '${u.name}')"><span>${u.name}</span><span class="${u.is_online?'status-dot':''}"></span></button>`; }); });
-    } else { selectChat('group', 'গ্রুপ চ্যাট'); }
-}
-function selectChat(u, n) { currentChatUser = u; document.getElementById('activeChatTitle').innerText = n; document.getElementById('chatForm').style.display = 'flex'; loadMessages(); }
-function loadMessages() {
-    if(!currentChatUser) return;
-    let g = currentChatUser === 'group'?1:0, t = g?'':currentChatUser;
-    fetch(`/api/get_messages?is_group=${g}&target=${t}`).then(r=>r.json()).then(d=>{
-        let b = document.getElementById('chatMessages'); b.innerHTML = '';
-        d.forEach(m => {
-            let out = m.sender === '{{ session.get("user", {}).get("username") }}';
-            b.innerHTML += `<div class="message-bubble ${out?'msg-outgoing':'msg-incoming'}"><div style="font-size:10px; opacity:0.8;">${m.sender}</div><div>${m.message||''}</div></div>`;
-        });
-        b.scrollTop = b.scrollHeight;
-    });
-}
-function sendMessage(e) {
-    e.preventDefault();
-    let fd = new FormData(); fd.append('message', document.getElementById('chatInput').value);
-    fd.append('is_group', currentChatUser === 'group'?1:0);
-    if(currentChatUser !== 'group') fd.append('receiver', currentChatUser);
-    fetch('/api/send_message', {method:'POST', body:fd}).then(r=>r.json()).then(d=>{if(d.success){document.getElementById('chatInput').value=''; loadMessages();}});
-}
-function openCustomerDetails(id) {
-    fetch(`/api/record_details/${id}`).then(r=>r.json()).then(d=>{
-        document.getElementById('customerDetailsBody').innerHTML = `<p><b>নাম:</b> ${d.customer_name}</p><p><b>মোবাইল:</b> ${d.mobile||'নেই'}</p><p><b>সেবা:</b> ${d.service_type}</p><p><b>সংযোগ:</b> ${d.connection_num||'নেই'}</p><p><b>ঠিকানা:</b> ${d.address||'নেই'}</p>`;
-        new bootstrap.Modal(document.getElementById('customerDetailsModal')).show();
-    });
-}
-function openAdminHistoryModal() {
-    fetch('/api/admin_history').then(r=>r.json()).then(d=>{
-        let tb = document.getElementById('adminHistoryTableBody'); tb.innerHTML = '';
-        d.forEach(h => { tb.innerHTML += `<tr><td>${h.name}</td><td>${h.username}</td><td>${h.last_active}</td><td>${h.total_added}</td></tr>`; });
-        new bootstrap.Modal(document.getElementById('adminHistoryModal')).show();
-    });
-}
-function openAccountRequestsModal() {
-    fetch('/api/account_requests').then(r=>r.json()).then(d=>{
-        let tb = document.getElementById('requestTableBody'); tb.innerHTML = '';
-        d.forEach(r => { tb.innerHTML += `<tr><td>${r.name}</td><td>${r.username}</td><td>${r.email}</td><td><button class="btn btn-success btn-sm" onclick="approveUser(${r.id})">অনুমোদন</button></td></tr>`; });
-        new bootstrap.Modal(document.getElementById('accountRequestsModal')).show();
-    });
-}
-function approveUser(id) { fetch(`/api/approve_user/${id}`, {method:'POST'}).then(r=>r.json()).then(d=>{if(d.success) openAccountRequestsModal();}); }
-function openTrashBinModal() {
-    fetch('/api/trash_records').then(r=>r.json()).then(d=>{
-        let tb = document.getElementById('trashTableBody'); tb.innerHTML = '';
-        d.forEach(r => { tb.innerHTML += `<tr><td>${r.customer_name}</td><td><button class="btn btn-success btn-sm" onclick="restoreRecord(${r.id})">রিস্টোর</button></td></tr>`; });
-        new bootstrap.Modal(document.getElementById('trashBinModal')).show();
-    });
-}
-function restoreRecord(id) { fetch(`/api/restore_record/${id}`, {method:'POST'}).then(r=>r.json()).then(d=>{if(d.success) openTrashBinModal();}); }
-function pollData() {
-    fetch('/api/notifications_count').then(r=>r.json()).then(d=>{
-        let mb = document.getElementById('msgBadge'); if(mb){ mb.innerText = d.messages; mb.style.display = d.messages>0?'block':'none'; }
-        let rb = document.getElementById('reqMenuBadge'); if(rb){ rb.innerText = d.requests; rb.style.display = d.requests>0?'inline-block':'none'; }
-    });
-}
-</script>
 </body>
 </html>
 """
 
 @app.route('/')
-def index(): return render_template_string(HTML_TEMPLATE)
+def home():
+    if 'user' in session:
+        conn = get_db()
+        c = conn.cursor()
+        today = datetime.now().strftime('%Y-%m-%d')
+        
+        c.execute("SELECT preset_comment, admin_contact FROM system_config LIMIT 1")
+        config = c.fetchone()
+        preset_comment = config[0] if config else ""
+        admin_contact = config[1] if config else ""
+        
+        if session['role'] == 'admin':
+            search_query = request.args.get('search', '').strip()
+            if search_query:
+                q = f"%{search_query}%"
+                c.execute("SELECT * FROM users WHERE role='staff' AND (username LIKE ? OR staff_name LIKE ? OR gmail LIKE ? OR mobile LIKE ?)", (q, q, q, q))
+            else:
+                c.execute("SELECT * FROM users WHERE role='staff'")
+            all_staff_raw = c.fetchall()
+            
+            c.execute("SELECT DISTINCT username FROM gmail_work WHERE date=?", (today,))
+            submitted_usernames = [row[0] for row in c.fetchall()]
+            
+            regular_staff_list = []
+            irregular_staff_list = []
+            
+            for s in all_staff_raw:
+                username = s[1]
+                # Calculate how many days user has been in system
+                join_date_str = s[11] if len(s) > 11 and s[11] else ""
+                tenure_days = 1
+                if join_date_str:
+                    try:
+                        jd = datetime.strptime(join_date_str, '%d %b, %Y')
+                        diff = datetime.now() - jd
+                        tenure_days = max(1, diff.days + 1)
+                    except:
+                        tenure_days = 1
+
+                c.execute("SELECT active_duration FROM attendance WHERE username=? AND date=?", (username, today))
+                att_row = c.fetchone()
+                duration = att_row[0] if att_row and att_row[0] else "হিসাব নেই"
+                
+                s_extended = list(s) + [duration, tenure_days]
+                
+                if username in submitted_usernames:
+                    regular_staff_list.append(s_extended)
+                else:
+                    irregular_staff_list.append(s_extended)
+            
+            c.execute("SELECT * FROM personal_payment_notes WHERE username='Khushbu23' ORDER BY id DESC")
+            admin_docs = c.fetchall()
+
+            c.execute("SELECT * FROM trash_bin ORDER BY id DESC")
+            trash_items = c.fetchall()
+
+            c.execute("SELECT * FROM payments ORDER BY id DESC")
+            all_payments = c.fetchall()
+            
+            unread_dict = {}
+            first_unread_sender = ""
+            for s in all_staff_raw:
+                c.execute("SELECT COUNT(*) FROM chats WHERE sender=? AND receiver='Khushbu23' AND is_read=0", (s[1],))
+                cnt = c.fetchone()[0]
+                unread_dict[s[1]] = cnt
+                if cnt > 0 and not first_unread_sender:
+                    first_unread_sender = s[1]
+
+            c.execute("SELECT COUNT(*) FROM chats WHERE receiver='Khushbu23' AND is_read=0")
+            total_unread_admin = c.fetchone()[0]
+            if not first_unread_sender and all_staff_raw:
+                first_unread_sender = all_staff_raw[0][1]
+            
+            selected_chat_user = request.args.get('chat_with')
+            chat_messages = []
+            if selected_chat_user:
+                c.execute("UPDATE chats SET is_read=1 WHERE sender=? AND receiver='Khushbu23'", (selected_chat_user,))
+                conn.commit()
+
+                c.execute("SELECT * FROM chats WHERE (sender=? AND receiver=?) OR (sender=? AND receiver=?) ORDER BY id ASC", 
+                          ('Khushbu23', selected_chat_user, selected_chat_user, 'Khushbu23'))
+                chat_messages = c.fetchall()
+                
+            view_staff_id = request.args.get('view_details')
+            detail_staff = None
+            detail_tenure_days = 1
+            staff_attendance_logs = []
+            staff_work_logs = []
+            if view_staff_id:
+                c.execute("SELECT * FROM users WHERE username=?", (view_staff_id,))
+                detail_staff = c.fetchone()
+                if detail_staff and len(detail_staff) > 11 and detail_staff[11]:
+                    try:
+                        jd = datetime.strptime(detail_staff[11], '%d %b, %Y')
+                        diff = datetime.now() - jd
+                        detail_tenure_days = max(1, diff.days + 1)
+                    except:
+                        detail_tenure_days = 1
+
+                c.execute("SELECT * FROM attendance WHERE username=? ORDER BY id DESC", (view_staff_id,))
+                staff_attendance_logs = c.fetchall()
+                c.execute("SELECT * FROM gmail_work WHERE username=? ORDER BY id DESC", (view_staff_id,))
+                staff_work_logs = c.fetchall()
+
+            conn.close()
+            return render_template_string(HTML_LAYOUT, all_staff_raw=all_staff_raw, 
+                                         regular_staff_list=regular_staff_list,
+                                         irregular_staff_list=irregular_staff_list,
+                                         preset_comment=preset_comment, 
+                                         admin_contact=admin_contact, selected_chat_user=selected_chat_user, 
+                                         chat_messages=chat_messages, search_query=search_query, 
+                                         admin_docs=admin_docs, trash_items=trash_items,
+                                         detail_staff=detail_staff, detail_tenure_days=detail_tenure_days,
+                                         staff_attendance_logs=staff_attendance_logs,
+                                         staff_work_logs=staff_work_logs, unread_dict=unread_dict,
+                                         total_unread_admin=total_unread_admin, first_unread_sender=first_unread_sender,
+                                         all_payments=all_payments)
+        else:
+            c.execute("SELECT * FROM attendance WHERE username=? AND date=?", (session['user'], today))
+            today_log = c.fetchone()
+            
+            c.execute("UPDATE chats SET is_read=1 WHERE sender='Khushbu23' AND receiver=?", (session['user'],))
+            conn.commit()
+
+            c.execute("SELECT * FROM chats WHERE (sender=? AND receiver=?) OR (sender=? AND receiver=?) ORDER BY id ASC", 
+                      (session['user'], 'Khushbu23', 'Khushbu23', session['user']))
+            chat_messages = c.fetchall()
+
+            c.execute("SELECT COUNT(*) FROM chats WHERE sender='Khushbu23' AND receiver=? AND is_read=0", (session['user'],))
+            total_unread_staff = c.fetchone()[0]
+
+            c.execute("SELECT * FROM assigned_tasks WHERE username=? ORDER BY id DESC", (session['user'],))
+            assigned_tasks = c.fetchall()
+            
+            c.execute("SELECT * FROM personal_payment_notes WHERE username=? ORDER BY id DESC", (session['user'],))
+            my_payment_notes = c.fetchall()
+            
+            conn.close()
+            return render_template_string(HTML_LAYOUT, today_log=today_log, preset_comment=preset_comment, 
+                                         admin_contact=admin_contact, chat_messages=chat_messages, 
+                                         assigned_tasks=assigned_tasks, my_payment_notes=my_payment_notes,
+                                         total_unread_staff=total_unread_staff)
+            
+    return render_template_string(HTML_LAYOUT)
+
+@app.route('/register')
+def register_page():
+    return render_template_string(HTML_LAYOUT)
+
+@app.route('/register-action', methods=['POST'])
+def register_action():
+    staff_name = request.form.get('staff_name')
+    gmail = request.form.get('gmail')
+    mobile = request.form.get('mobile')
+    payment_method = request.form.get('payment_method')
+    payment_number = request.form.get('payment_number')
+    password = request.form.get('password')
+    join_date = datetime.now().strftime('%d %b, %Y')
+    
+    rand_num = random.randint(1000, 9999)
+    username = f"staff_{rand_num}"
+    
+    try:
+        conn = get_db()
+        c = conn.cursor()
+        c.execute("""INSERT INTO users 
+                     (username, staff_name, password, role, account_type, gmail, gmail_pass, mobile, payment_method, payment_number, join_date) 
+                     VALUES (?, ?, ?, 'staff', 'Registered', ?, ?, ?, ?, ?, ?)""", 
+                  (username, staff_name, password, gmail, 'User Set', mobile, payment_method, payment_number, join_date))
+        conn.commit()
+        conn.close()
+        flash(f'একাউন্ট সফলভাবে রেজিস্টার হয়েছে! ইউজার আইডি: {username}')
+    except:
+        flash('এই জিমেইল দিয়ে ইতিমধ্যে একাউন্ট রয়েছে!')
+    return redirect('/')
 
 @app.route('/login', methods=['POST'])
 def login():
     username = request.form.get('username')
     password = request.form.get('password')
-    u = db_exec("SELECT * FROM users WHERE (username = ? OR email = ?) AND is_deleted = 0", (username, username), fetchone=True)
-    if u and check_password_hash(u['password'], password):
-        if u['status'] != 'active': return "অ্যাকাউন্ট অনুমোদিত নয়!", 403
-        session['user'] = dict(u)
-        return redirect(url_for('index'))
-    return "ভুল তথ্য", 400
+    conn = get_db()
+    c = conn.cursor()
+    c.execute("SELECT * FROM users WHERE (username=? OR gmail=?) AND password=?", (username, username, password))
+    user = c.fetchone()
+    conn.close()
+    
+    if user:
+        session['user'] = user[1]
+        session['role'] = user[4]
+        flash('লগইন সফল হয়েছে!')
+    else:
+        flash('ভুল আইডি অথবা পাসওয়ার্ড!')
+    return redirect('/')
+
+@app.route('/create-staff', methods=['POST'])
+def create_staff():
+    if session.get('role') == 'admin':
+        staff_user = request.form.get('staff_user')
+        staff_name = request.form.get('staff_name')
+        gmail = request.form.get('gmail')
+        gmail_pass = request.form.get('gmail_pass')
+        staff_pass = request.form.get('staff_pass')
+        mobile = request.form.get('mobile')
+        payment_method = request.form.get('payment_method')
+        payment_number = request.form.get('payment_number')
+        entered_pin = request.form.get('security_pin')
+        join_date = datetime.now().strftime('%d %b, %Y')
+        
+        if entered_pin == SECURITY_PIN:
+            try:
+                conn = get_db()
+                c = conn.cursor()
+                c.execute("""INSERT INTO users 
+                             (username, staff_name, password, role, account_type, gmail, gmail_pass, mobile, payment_method, payment_number, join_date) 
+                             VALUES (?, ?, ?, 'staff', 'Extra', ?, ?, ?, ?, ?, ?)""", 
+                          (staff_user, staff_name, staff_pass, gmail, gmail_pass, mobile, payment_method, payment_number, join_date))
+                conn.commit()
+                conn.close()
+                flash('পার্সোনাল আইডি সফলভাবে সেভ করা হয়েছে!')
+            except:
+                flash('এই ইউজার আইডিটি আগে থেকেই ডাটাবেসে রয়েছে!')
+        else:
+            flash('ভুল সিকিউরিটি কোড (137955) দিন!')
+    return redirect('/')
+
+@app.route('/send-auto-reminder', methods=['POST'])
+def send_auto_reminder():
+    if session.get('role') == 'admin':
+        receiver = request.form.get('receiver')
+        message = "আপনার দ্রুত কাজ জমা দিন"
+        timestamp = datetime.now().strftime('%I:%M %p, %d %b')
+        
+        conn = get_db()
+        c = conn.cursor()
+        c.execute("INSERT INTO chats (sender, receiver, message, timestamp, is_read) VALUES ('Khushbu23', ?, ?, ?, 0)", 
+                  (receiver, message, timestamp))
+        conn.commit()
+        conn.close()
+        flash(f'স্টাফ ({receiver}) এর কাছে রিমাইন্ডার মেসেজ পাঠানো হয়েছে!')
+    return redirect('/')
+
+@app.route('/save-admin-doc', methods=['POST'])
+def save_admin_doc():
+    if session.get('role') == 'admin':
+        note_title = request.form.get('note_title')
+        note_details = request.form.get('note_details')
+        entered_pin = request.form.get('security_pin')
+        date_saved = datetime.now().strftime('%d %b, %Y %I:%M %p')
+        
+        if entered_pin == SECURITY_PIN:
+            conn = get_db()
+            c = conn.cursor()
+            c.execute("INSERT INTO personal_payment_notes (username, note_title, note_details, date_saved) VALUES ('Khushbu23', ?, ?, ?)", 
+                      (note_title, note_details, date_saved))
+            conn.commit()
+            conn.close()
+            flash('নোট সেভ হয়েছে!')
+        else:
+            flash('ভুল সিকিউরিটি পিন (137955)!')
+    return redirect('/')
+
+@app.route('/delete-admin-doc', methods=['POST'])
+def delete_admin_doc():
+    if session.get('role') == 'admin':
+        doc_id = request.form.get('doc_id')
+        entered_pin = request.form.get('security_pin')
+        
+        if entered_pin == SECURITY_PIN:
+            conn = get_db()
+            c = conn.cursor()
+            c.execute("SELECT note_title, note_details FROM personal_payment_notes WHERE id=?", (doc_id,))
+            doc = c.fetchone()
+            if doc:
+                trash_detail = f"Secure Note: {doc[0]} - {doc[1]}"
+                deleted_time = datetime.now().strftime('%d %b, %Y %I:%M %p')
+                c.execute("INSERT INTO trash_bin (item_type, item_details, deleted_time) VALUES ('Admin Note', ?, ?)", (trash_detail, deleted_time))
+                c.execute("DELETE FROM personal_payment_notes WHERE id=?", (doc_id,))
+                conn.commit()
+            conn.close()
+            flash('নোটটি মুছে রিসাইকেল বিনে পাঠানো হয়েছে!')
+        else:
+            flash('ভুল সিকিউরিটি পিন (137955)! নোট ডিলিট হয়নি।')
+    return redirect('/')
+
+@app.route('/save-my-payment-note', methods=['POST'])
+def save_my_payment_note():
+    if 'user' in session:
+        note_title = request.form.get('note_title')
+        note_details = request.form.get('note_details')
+        date_saved = datetime.now().strftime('%d %b, %Y')
+        conn = get_db()
+        c = conn.cursor()
+        c.execute("INSERT INTO personal_payment_notes (username, note_title, note_details, date_saved) VALUES (?, ?, ?, ?)", 
+                  (session['user'], note_title, note_details, date_saved))
+        conn.commit()
+        conn.close()
+        flash('নোট সেভ হয়েছে!')
+    return redirect('/')
+
+@app.route('/delete-my-payment-note', methods=['POST'])
+def delete_my_payment_note():
+    if 'user' in session:
+        note_id = request.form.get('note_id')
+        conn = get_db()
+        c = conn.cursor()
+        c.execute("SELECT note_title, note_details FROM personal_payment_notes WHERE id=? AND username=?", (note_id, session['user']))
+        note = c.fetchone()
+        if note:
+            trash_detail = f"Staff Note ({session['user']}): {note[0]} - {note[1]}"
+            deleted_time = datetime.now().strftime('%d %b, %Y %I:%M %p')
+            c.execute("INSERT INTO trash_bin (item_type, item_details, deleted_time) VALUES ('User Note', ?, ?)", (trash_detail, deleted_time))
+            c.execute("DELETE FROM personal_payment_notes WHERE id=? AND username=?", (note_id, session['user']))
+            conn.commit()
+        conn.close()
+        flash('নোটটি মুছে ফেলা হয়েছে!')
+    return redirect('/')
+
+@app.route('/delete-staff', methods=['POST'])
+def delete_staff():
+    if session.get('role') == 'admin':
+        username = request.form.get('username')
+        entered_pin = request.form.get('security_pin')
+        
+        if entered_pin == SECURITY_PIN:
+            conn = get_db()
+            c = conn.cursor()
+            c.execute("SELECT staff_name, gmail, mobile FROM users WHERE username=?", (username,))
+            user_data = c.fetchone()
+            if user_data:
+                trash_detail = f"Staff Account: ID: {username}, Name: {user_data[0]}, Gmail: {user_data[1]}"
+                deleted_time = datetime.now().strftime('%d %b, %Y %I:%M %p')
+                c.execute("INSERT INTO trash_bin (item_type, item_details, deleted_time) VALUES ('Staff Account', ?, ?)", (trash_detail, deleted_time))
+                
+                c.execute("DELETE FROM users WHERE username=?", (username,))
+                c.execute("DELETE FROM assigned_tasks WHERE username=?", (username,))
+                c.execute("DELETE FROM payments WHERE username=?", (username,))
+                c.execute("DELETE FROM attendance WHERE username=?", (username,))
+                c.execute("DELETE FROM personal_payment_notes WHERE username=?", (username,))
+                conn.commit()
+            conn.close()
+            flash('অ্যাকাউন্ট সফলভাবে ডিলিট করে রিসাইকেল বিনে সংরক্ষণ করা হয়েছে!')
+        else:
+            flash('ভুল সিকিউরিটি পিন (137955)! অ্যাকাউন্ট ডিলিট করা হয়নি।')
+    return redirect('/')
+
+@app.route('/add-payment', methods=['POST'])
+def add_payment():
+    if session.get('role') == 'admin':
+        staff_username = request.form.get('staff_name')
+        month_year = request.form.get('month_year')
+        amount = request.form.get('amount')
+        payment_method = request.form.get('payment_method')
+        payment_number = request.form.get('payment_number')
+        p_date = datetime.now().strftime('%d %b, %Y')
+        
+        conn = get_db()
+        c = conn.cursor()
+        c.execute("INSERT INTO payments (username, month_year, amount, payment_method, payment_number, payment_date) VALUES (?, ?, ?, ?, ?, ?)", 
+                  (staff_username, month_year, amount, payment_method, payment_number, p_date))
+        conn.commit()
+        conn.close()
+        flash('পেমেন্ট হিস্ট্রি যুক্ত করা হয়েছে!')
+    return redirect('/')
+
+@app.route('/update-payment', methods=['POST'])
+def update_payment():
+    if session.get('role') == 'admin':
+        pay_id = request.form.get('pay_id')
+        month_year = request.form.get('month_year')
+        amount = request.form.get('amount')
+        payment_number = request.form.get('payment_number')
+        
+        conn = get_db()
+        c = conn.cursor()
+        c.execute("UPDATE payments SET month_year=?, amount=?, payment_number=? WHERE id=?", (month_year, amount, payment_number, pay_id))
+        conn.commit()
+        conn.close()
+        flash('পেমেন্ট রেকর্ড আপডেট করা হয়েছে!')
+    return redirect('/')
+
+@app.route('/assign-task', methods=['POST'])
+def assign_task():
+    if session.get('role') == 'admin':
+        staff_username = request.form.get('staff_username')
+        task_details = request.form.get('task_details')
+        assigned_date = datetime.now().strftime('%Y-%m-%d %I:%M %p')
+        
+        conn = get_db()
+        c = conn.cursor()
+        c.execute("INSERT INTO assigned_tasks (username, task_details, assigned_date, status) VALUES (?, ?, ?, ?)", 
+                  (staff_username, task_details, assigned_date, 'Pending'))
+        conn.commit()
+        conn.close()
+        flash('কাজ পাঠানো হয়েছে!')
+    return redirect('/')
+
+@app.route('/accept-task', methods=['POST'])
+def accept_task():
+    if 'user' in session:
+        task_id = request.form.get('task_id')
+        conn = get_db()
+        c = conn.cursor()
+        c.execute("UPDATE assigned_tasks SET status='Accepted' WHERE id=? AND username=?", (task_id, session['user']))
+        conn.commit()
+        conn.close()
+        flash('কাজ এক্সেপ্ট করা হয়েছে!')
+    return redirect('/')
+
+@app.route('/start-task', methods=['POST'])
+def start_task():
+    if 'user' in session:
+        task_id = request.form.get('task_id')
+        start_time = datetime.now().strftime('%I:%M %p, %d %b')
+        conn = get_db()
+        c = conn.cursor()
+        c.execute("UPDATE assigned_tasks SET start_time=? WHERE id=? AND username=?", (start_time, task_id, session['user']))
+        conn.commit()
+        conn.close()
+        flash('কাজ শুরু হয়েছে!')
+    return redirect('/')
+
+@app.route('/finish-task', methods=['POST'])
+def finish_task():
+    if 'user' in session:
+        task_id = request.form.get('task_id')
+        end_time = datetime.now().strftime('%I:%M %p, %d %b')
+        conn = get_db()
+        c = conn.cursor()
+        c.execute("UPDATE assigned_tasks SET end_time=?, status='Completed' WHERE id=? AND username=?", (end_time, task_id, session['user']))
+        conn.commit()
+        conn.close()
+        flash('কাজ সম্পন্ন হয়েছে!')
+    return redirect('/')
+
+@app.route('/check-in', methods=['POST'])
+def check_in():
+    if 'user' in session:
+        now = datetime.now()
+        time_str = now.strftime('%I:%M %p')
+        date_str = now.strftime('%Y-%m-%d')
+        conn = get_db()
+        c = conn.cursor()
+        c.execute("INSERT INTO attendance (username, check_in, date) VALUES (?, ?, ?)", (session['user'], time_str, date_str))
+        conn.commit()
+        conn.close()
+        flash('হাজিরা সম্পন্ন!')
+    return redirect('/')
+
+@app.route('/submit-gmail-work', methods=['POST'])
+def submit_gmail_work():
+    if 'user' in session:
+        gmail_used = request.form.get('gmail_used')
+        work_count = request.form.get('work_count')
+        comment_used = request.form.get('comment_used')
+        date_str = datetime.now().strftime('%Y-%m-%d')
+        conn = get_db()
+        c = conn.cursor()
+        c.execute("INSERT INTO gmail_work (username, gmail_used, work_count, comment_used, date) VALUES (?, ?, ?, ?, ?)", 
+                  (session['user'], gmail_used, work_count, comment_used, date_str))
+        conn.commit()
+        conn.close()
+        flash('কাজের হিসাব জমা হয়েছে!')
+    return redirect('/')
+
+@app.route('/check-out', methods=['POST'])
+def check_out():
+    if 'user' in session:
+        now = datetime.now()
+        time_str = now.strftime('%I:%M %p')
+        today = datetime.now().strftime('%Y-%m-%d')
+        
+        conn = get_db()
+        c = conn.cursor()
+        c.execute("SELECT check_in FROM attendance WHERE username=? AND date=?", (session['user'], today))
+        row = c.fetchone()
+        if row and row[0]:
+            check_in_time_str = row[0]
+            try:
+                t1 = datetime.strptime(check_in_time_str, '%I:%M %p')
+                t2 = datetime.strptime(time_str, '%I:%M %p')
+                diff = t2 - t1
+                hours = int(diff.seconds // 3600)
+                minutes = int((diff.seconds % 3600) // 60)
+                duration_str = f"{hours} ঘন্টা {minutes} মিনিট"
+            except:
+                duration_str = "হিসাব করা যায়নি"
+        else:
+            duration_str = "অজানা"
+
+        c.execute("UPDATE attendance SET check_out=?, active_duration=? WHERE username=? AND date=?", (time_str, duration_str, session['user'], today))
+        conn.commit()
+        conn.close()
+        flash('Check-Out সম্পন্ন!')
+    return redirect('/')
+
+@app.route('/send-message', methods=['POST'])
+def send_message():
+    if 'user' in session:
+        sender = session['user']
+        receiver = request.form.get('receiver')
+        message = request.form.get('message', '')
+        timestamp = datetime.now().strftime('%I:%M %p, %d %b')
+        
+        image_url = ""
+        file = request.files.get('image')
+        if file and file.filename != '':
+            upload_dir = 'static/uploads'
+            os.makedirs(upload_dir, exist_ok=True)
+            file_path = os.path.join(upload_dir, file.filename)
+            file.save(file_path)
+            image_url = f"/{file_path}"
+        
+        if message or image_url:
+            conn = get_db()
+            c = conn.cursor()
+            c.execute("INSERT INTO chats (sender, receiver, message, image_url, timestamp, is_read) VALUES (?, ?, ?, ?, ?, 0)", 
+                      (sender, receiver, message, image_url, timestamp))
+            conn.commit()
+            conn.close()
+            
+        if session['role'] == 'admin':
+            return redirect(f'/?chat_with={receiver}')
+    return redirect('/')
 
 @app.route('/logout')
-def logout(): session.clear(); return redirect(url_for('index'))
-
-@app.route('/api/ping')
-def ping():
-    if 'user' in session:
-        db_exec("UPDATE users SET last_active = CURRENT_TIMESTAMP WHERE username = ?", (session['user']['username'],), commit=True)
-    return jsonify({"status": "alive"})
-
-@app.route('/api/stats')
-def api_stats():
-    t_res = db_exec("SELECT COUNT(*) FROM phone_records WHERE is_deleted = 0", fetchone=True)
-    tel_res = db_exec("SELECT COUNT(*) FROM phone_records WHERE service_type = 'টেলিফোন নাম্বার' AND is_deleted = 0", fetchone=True)
-    both_res = db_exec("SELECT COUNT(*) FROM phone_records WHERE service_type = 'টেলিফোন+ওয়াইফাই নম্বর' AND is_deleted = 0", fetchone=True)
-    wifi_res = db_exec("SELECT COUNT(*) FROM phone_records WHERE service_type = 'ওয়াইফাই নাম্বার' AND is_deleted = 0", fetchone=True)
-    
-    return jsonify({
-        "total": t_res[0] if t_res else 0,
-        "tel": tel_res[0] if tel_res else 0,
-        "both": both_res[0] if both_res else 0,
-        "wifi": wifi_res[0] if wifi_res else 0
-    })
-
-@app.route('/api/admin_count')
-def api_admin_count():
-    res = db_exec("SELECT COUNT(*) FROM users WHERE role IN ('admin', 'main_admin') AND is_deleted = 0", fetchone=True)
-    return jsonify({"count": res[0] if res else 0})
-
-@app.route('/api/records')
-def api_records():
-    search, sort, service = request.args.get('search', ''), request.args.get('sort', 'id_desc'), request.args.get('service', '')
-    q = "SELECT * FROM phone_records WHERE is_deleted = 0"
-    p = []
-    if search:
-        q += " AND (customer_name LIKE ? OR mobile LIKE ? OR connection_num LIKE ?)"
-        p.extend([f"%{search}%"]*3)
-    if service:
-        q += " AND service_type = ?"
-        p.append(service)
-    q += " ORDER BY id " + ("ASC" if sort == 'id_asc' else "DESC")
-    rows = db_exec(q, p, fetchall=True)
-    return jsonify([dict(r) for r in rows] if rows else [])
-
-@app.route('/api/save_record', methods=['POST'])
-def save_record():
-    if 'user' not in session or session['user']['role'] not in ['admin', 'main_admin']: return jsonify({'success': False}), 403
-    f = request.files.get('record_image_gallery')
-    img_url = ''
-    if f and f.filename:
-        fn = secure_filename(f.filename)
-        f.save(os.path.join(app.config['UPLOAD_FOLDER'], fn))
-        img_url = f"static/uploads/{fn}"
-    db_exec("INSERT INTO phone_records (customer_name, mobile, service_type, connection_num, address, note, record_image, added_by) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-            (request.form.get('customer_name'), request.form.get('mobile', ''), request.form.get('service_type'), request.form.get('connection_num', ''), request.form.get('address', ''), request.form.get('note', ''), img_url, session['user']['username']), commit=True)
-    return jsonify({'success': True})
-
-@app.route('/api/delete_record/<int:id>', methods=['POST'])
-def delete_record(id):
-    if 'user' not in session or session['user']['role'] not in ['admin', 'main_admin']: return jsonify({'success': False}), 403
-    db_exec("UPDATE phone_records SET is_deleted = 1 WHERE id = ?", (id,), commit=True)
-    return jsonify({'success': True})
-
-@app.route('/api/record_details/<int:id>')
-def record_details(id):
-    r = db_exec("SELECT * FROM phone_records WHERE id = ?", (id,), fetchone=True)
-    return jsonify(dict(r) if r else {})
-
-@app.route('/api/users')
-def api_users():
-    if 'user' not in session: return jsonify([])
-    rows = db_exec("SELECT id, name, username, email, role, status FROM users WHERE is_deleted = 0", fetchall=True)
-    return jsonify([dict(u) for u in rows] if rows else [])
-
-@app.route('/api/delete_user/<int:user_id>', methods=['POST'])
-def delete_user(user_id):
-    if 'user' not in session or session['user']['role'] not in ['admin', 'main_admin']: return jsonify({'success': False}), 403
-    db_exec("UPDATE users SET is_deleted = 1 WHERE id = ?", (user_id,), commit=True)
-    return jsonify({'success': True})
-
-@app.route('/api/create_user', methods=['POST'])
-def create_user():
-    if 'user' not in session or session['user']['username'] != MAIN_ADMIN_USERNAME: return redirect(url_for('index'))
-    db_exec("INSERT INTO users (name, username, email, phone, password, raw_pass, role, status, added_by) VALUES (?, ?, ?, ?, ?, ?, ?, 'active', ?)",
-            (request.form.get('name'), request.form.get('username'), request.form.get('email', ''), request.form.get('phone', ''), generate_password_hash(request.form.get('password')), request.form.get('password'), request.form.get('role', 'user'), session['user']['username']), commit=True)
-    return redirect(url_for('index'))
-
-@app.route('/api/register_request', methods=['POST'])
-def register_request():
-    db_exec("INSERT INTO users (name, username, email, phone, password, raw_pass, role, status, added_by) VALUES (?, ?, ?, ?, ?, ?, 'user', 'pending', 'Self')",
-            (request.form.get('name'), request.form.get('username'), request.form.get('email'), request.form.get('phone'), generate_password_hash(request.form.get('password')), request.form.get('password')), commit=True)
-    return redirect(url_for('index'))
-
-@app.route('/api/account_requests')
-def account_requests():
-    if session.get('user', {}).get('username') != MAIN_ADMIN_USERNAME: return jsonify([])
-    rows = db_exec("SELECT id, name, username, email FROM users WHERE status = 'pending' AND is_deleted = 0", fetchall=True)
-    return jsonify([dict(r) for r in rows] if rows else [])
-
-@app.route('/api/approve_user/<int:id>', methods=['POST'])
-def approve_user(id):
-    if session.get('user', {}).get('username') != MAIN_ADMIN_USERNAME: return jsonify({'success': False}), 403
-    db_exec("UPDATE users SET status = 'active' WHERE id = ?", (id,), commit=True)
-    return jsonify({'success': True})
-
-@app.route('/api/chat_users')
-def chat_users():
-    if 'user' not in session: return jsonify([])
-    now = datetime.now()
-    res = []
-    rows = db_exec("SELECT username, name, last_active FROM users WHERE is_deleted = 0 AND status = 'active'", fetchall=True)
-    if rows:
-        for u in rows:
-            ud = dict(u)
-            online = False
-            try:
-                if u['last_active'] and (now - datetime.strptime(u['last_active'], '%Y-%m-%d %H:%M:%S')).total_seconds() < 30: online = True
-            except: pass
-            ud['is_online'] = online
-            res.append(ud)
-    return jsonify(res)
-
-@app.route('/api/get_messages')
-def get_messages():
-    if 'user' not in session: return jsonify([])
-    g, t, un = int(request.args.get('is_group', 0)), request.args.get('target'), session['user']['username']
-    if g:
-        rows = db_exec("SELECT sender, receiver, message, timestamp FROM messages WHERE is_group = 1 ORDER BY timestamp ASC", fetchall=True)
-    else:
-        rows = db_exec("SELECT sender, receiver, message, timestamp FROM messages WHERE is_group = 0 AND ((sender = ? AND receiver = ?) OR (sender = ? AND receiver = ?)) ORDER BY timestamp ASC", (un, t, t, un), fetchall=True)
-    return jsonify([{'sender': r[0], 'receiver': r[1], 'message': r[2], 'timestamp': r[3]} for r in rows] if rows else [])
-
-@app.route('/api/send_message', methods=['POST'])
-def send_message():
-    if 'user' not in session: return jsonify({'success': False}), 403
-    db_exec("INSERT INTO messages (sender, receiver, message, is_group) VALUES (?, ?, ?, ?)",
-            (session['user']['username'], request.form.get('receiver', ''), request.form.get('message', ''), int(request.form.get('is_group', 0))), commit=True)
-    return jsonify({'success': True})
-
-@app.route('/api/notifications_count')
-def notifications_count():
-    if 'user' not in session: return jsonify({'messages': 0, 'requests': 0})
-    un = session['user']['username']
-    mc_res = db_exec("SELECT COUNT(*) FROM messages WHERE receiver = ? AND is_read = 0", (un,), fetchone=True)
-    rc_res = db_exec("SELECT COUNT(*) FROM users WHERE status = 'pending' AND is_deleted = 0", fetchone=True) if un == MAIN_ADMIN_USERNAME else [0]
-    return jsonify({
-        'messages': mc_res[0] if mc_res else 0,
-        'requests': rc_res[0] if rc_res else 0
-    })
-
-@app.route('/update_profile_pic', methods=['POST'])
-def update_profile_pic():
-    f = request.files.get('profile_pic')
-    if 'user' in session and f and f.filename:
-        fn = secure_filename(f.filename)
-        f.save(os.path.join(app.config['UPLOAD_FOLDER'], fn))
-        pic = f"static/uploads/{fn}"
-        db_exec("UPDATE users SET profile_pic = ? WHERE username = ?", (pic, session['user']['username']), commit=True)
-        updated_user = db_exec("SELECT * FROM users WHERE username = ?", (session['user']['username'],), fetchone=True)
-        if updated_user:
-            session['user'] = dict(updated_user)
-    return redirect(url_for('index'))
-
-@app.route('/api/admin_history')
-def admin_history():
-    if session.get('user', {}).get('username') != MAIN_ADMIN_USERNAME: return jsonify([])
-    res = []
-    admins = db_exec("SELECT name, username, last_active FROM users WHERE role IN ('admin', 'main_admin') AND is_deleted = 0", fetchall=True)
-    if admins:
-        for a in admins:
-            ad = dict(a)
-            tot = db_exec("SELECT COUNT(*) FROM phone_records WHERE added_by = ?", (a['username'],), fetchone=True)
-            ad['total_added'] = tot[0] if tot else 0
-            res.append(ad)
-    return jsonify(res)
-
-@app.route('/api/trash_records')
-def trash_records():
-    if session.get('user', {}).get('username') != MAIN_ADMIN_USERNAME: return jsonify([])
-    rows = db_exec("SELECT id, customer_name FROM phone_records WHERE is_deleted = 1", fetchall=True)
-    return jsonify([dict(r) for r in rows] if rows else [])
-
-@app.route('/api/restore_record/<int:id>', methods=['POST'])
-def restore_record(id):
-    if session.get('user', {}).get('username') != MAIN_ADMIN_USERNAME: return jsonify({'success': False}), 403
-    db_exec("UPDATE phone_records SET is_deleted = 0 WHERE id = ?", (id,), commit=True)
-    return jsonify({'success': True})
+def logout():
+    session.clear()
+    return redirect('/')
 
 if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=5000, debug=True)
+    app.run()
